@@ -53,6 +53,14 @@
 - [ ] Mettre en place la récupération d'épisodes comparables et évaluer sa
   valeur contre une mémoire de logs non structurée.
 - [ ] Mesurer la détection d'impasse, l'arrêt utile et la reprise après échec.
+- [ ] Prototyper le contrôle MIDCA : `note → assess → guide`, avec action méta
+  limitée à des politiques explicitement autorisées et journalisées.
+- [ ] Ajouter une attention concurrentielle de la mémoire active ; comparer à
+  FIFO/récence simple sur les mêmes tâches.
+- [ ] Implémenter des compétences inspirées de Voyager : préconditions,
+  exécutable, tests, statistiques, provenance et récupération.
+- [ ] Ajouter une correction inspirée de Reflexion seulement après un échec
+  vérifié ; mesurer que la tentative suivante change effectivement.
 
 ## M7 — recherche cognitive, sans allégation de conscience
 

@@ -103,3 +103,20 @@ une piste documentée, jamais une validation automatique ou une dépendance.
 - https://github.com/Anandesh-Sharma/awesome-agent-harnesses
 - https://huggingface.co/papers
 - https://arxiv.org/search/?query=agent+harness&searchtype=all
+
+## Architectures cognitives et métacognition
+
+- https://github.com/COLAB2/midca
+- https://midca.readthedocs.io/en/latest/
+- https://www.researchgate.net/publication/310491466_MIDCA_A_Metacognitive_Integrated_Dual-Cycle_Architecture_for_Self-Regulated_Autonomy
+- https://www.sciencedirect.com/science/article/pii/S2212683X12000060
+- https://pmc.ncbi.nlm.nih.gov/articles/PMC3081809/
+- https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2022.846931/full
+- https://github.com/mindpixel20/lida
+- https://github.com/noahshinn/reflexion
+- https://github.com/MineDojo/Voyager
+- https://arxiv.org/abs/2305.16291
+- https://arxiv.org/abs/2304.03442
+- https://github.com/andres-villavicencio-dev/smallville-agents
+- https://arxiv.org/abs/2308.08708
+- https://doi.org/10.1016/j.tics.2025.10.011

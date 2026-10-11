@@ -8,6 +8,24 @@
 4. La **mémoire** conserve seulement des résultats avec provenance et contexte.
 5. Les **runtimes** ne sont sélectionnés que par compatibilité et mesures E2E.
 
+## Extension expérimentale : contrôle à deux niveaux
+
+Le niveau objet exécute la tâche : percevoir les preuves, interpréter, choisir
+un but, planifier, agir et observer le résultat. Le niveau méta lit une trace
+de ce cycle, détecte les écarts, formule une cause testable, puis modifie une
+politique du niveau objet ou décide d'arrêter. C'est l'usage du principe
+MIDCA, et non une demande au LLM de commenter sa dernière réponse.
+
+Une couche d'attention sélectionne les événements qui doivent entrer dans la
+mémoire active et les décisions qui doivent être diffusées au contrôleur. Les
+compétences réutilisables restent des artefacts vérifiables : préconditions,
+action exécutable, post-conditions, tests, coûts, taux de succès et procédure
+de récupération.
+
+La synthèse MIDCA/LIDA/Reflexion/Voyager est une hypothèse de recherche. Elle
+ne devient une architecture de production qu'après comparaisons à budget égal
+contre le harnais de base.
+
 ## Frontières
 
 - DSPy, GEPA, Optuna et BoTorch sont des optimiseurs hors ligne.
