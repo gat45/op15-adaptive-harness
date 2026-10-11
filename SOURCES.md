@@ -57,6 +57,24 @@ une piste documentée, jamais une validation automatique ou une dépendance.
 
 ## Raisonnement, métaraisonnement et allocation
 
+- https://doi.org/10.1016/0004-3702(91)90015-C
+- https://iiif.library.cmu.edu/file/Newell_box00014_fld01011_doc0001/Newell_box00014_fld01011_doc0001.pdf
+- https://soar.eecs.umich.edu/
+- https://act-r.psy.cmu.edu/
+- https://sites.google.com/site/clarioncognitivearchitecture/
+- https://ccrg.cs.memphis.edu/
+- https://github.com/colab2/MIDCA
+- https://github.com/mclumd/MIDCA
+- https://github.com/noahshinn/reflexion
+- https://github.com/MineDojo/Voyager
+- https://github.com/danijar/dreamerv3
+- https://github.com/ContinualAI/avalanche
+- https://github.com/trueagi-io/hyperon-experimental
+- https://arxiv.org/abs/2304.03442
+- https://arxiv.org/abs/2305.16291
+- https://arxiv.org/abs/2310.08560
+- https://arxiv.org/abs/2308.08708
+
 - https://people.eecs.berkeley.edu/~russell/papers/metareasoning.pdf
 - https://arxiv.org/abs/2602.16699
 - https://arxiv.org/abs/2604.14853
