@@ -126,3 +126,10 @@ une piste documentée, jamais une validation automatique ou une dépendance.
 - https://arxiv.org/abs/2107.07511
 - https://arxiv.org/abs/2305.11738
 - https://aiagentindex.mit.edu/
+- https://github.com/ethz-spylab/agentdojo
+- https://github.com/agiresearch/ASB
+- https://github.com/sierra-research/tau2-bench
+- https://arxiv.org/abs/2410.10813
+- https://github.com/ProsusAI/MemEval
+- https://github.com/scikit-learn-contrib/MAPIE
+- https://github.com/modelcontextprotocol/servers/security

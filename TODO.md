@@ -81,3 +81,12 @@
   confondre avec une preuve de vérité.
 - [ ] Garder Avalanche, DreamerV3, MUSE et CRITIC isolés comme références ou
   expériences, hors chemin de production par défaut.
+
+## M0 — fiabilité de l'action (bloquant)
+
+- [ ] Remplacer tout vote de vérification par des obligations de preuve typées.
+- [ ] Implémenter capacités signées, validation des arguments et transitions
+  transactionnelles avant chaque effet externe.
+- [ ] Implémenter réconciliation après interruption et interdire les retries
+  aveugles d'actions à effet de bord.
+- [ ] Exécuter les cinq expériences bloquantes de `RELIABILITY_AUDIT.md`.
