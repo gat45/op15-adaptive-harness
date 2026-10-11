@@ -1,0 +1,3 @@
+use op15_adaptive_harness::adaptive_policy::{AdaptivePolicy,Strategy};
+#[test] fn verified_outcomes_change_strategy_selection() { let mut p=AdaptivePolicy{value_of_success:100.0,..Default::default()}; for _ in 0..5 { p.record_verified(Strategy::Retrieve,true,5); p.record_verified(Strategy::Answer,false,2); } assert_eq!(p.choose(&[Strategy::Answer,Strategy::Retrieve]),Strategy::Retrieve); }
+#[test] fn no_outcome_means_no_claimed_learning() { let p=AdaptivePolicy{value_of_success:10.0,..Default::default()}; assert_eq!(p.estimates.len(),0); assert!(p.choose(&[Strategy::Abstain,Strategy::Verify])==Strategy::Abstain || p.choose(&[Strategy::Abstain,Strategy::Verify])==Strategy::Verify); }

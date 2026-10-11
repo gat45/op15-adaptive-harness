@@ -59,3 +59,11 @@ Le MVP ajoute une autorisation typée (`permissions`), une machine de transition
 transactionnelles (`action`), un exécuteur raccordable (`runner`) et leur suite
 de tests. Aucun effet externe n'est exécuté par défaut : une action doit être
 proposée, autorisée, démarrée, constatée puis confirmée par un oracle.
+
+## Politique adaptative vérifiée
+
+`adaptive_policy` évalue des stratégies explicites avec une estimation lissée
+de réussite et de coût. Elle ne met à jour ses estimations qu’après un verdict
+vérifié. Le test démontre le changement de sélection sur des résultats
+synthétiques contrôlés ; il ne démontre pas encore un gain sur des tâches LLM
+réelles, ce qui exige un corpus scellé et des baselines.
