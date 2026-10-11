@@ -72,6 +72,15 @@ struct DesktopConfig {
     context_size: u32,
     gpu_layers: i32,
     port: u16,
+    threads: u16,
+    parallel: u8,
+    batch_size: u16,
+    ubatch_size: u16,
+    cache_type: String,
+    flash_attention: bool,
+    mtp_enabled: bool,
+    mtp_n_max: u8,
+    server_metrics: bool,
 }
 impl DesktopConfig {
     fn normalized(mut self) -> Self {
@@ -79,11 +88,16 @@ impl DesktopConfig {
             self.model_name = "local".into();
         }
         if self.context_size == 0 {
-            self.context_size = 4096;
+            self.context_size = 32_768;
         }
         if self.port == 0 {
-            self.port = 8080;
+            self.port = 18_181;
         }
+        if self.threads == 0 { self.threads = 8; }
+        if self.parallel == 0 { self.parallel = 1; }
+        if self.batch_size == 0 { self.batch_size = 2_048; }
+        if self.ubatch_size == 0 { self.ubatch_size = 512; }
+        if self.cache_type.trim().is_empty() { self.cache_type = "q8_0".into(); }
         self
     }
 }
@@ -355,6 +369,11 @@ fn start_configured_server(config: DesktopConfig) -> Result<u32, String> {
     let context = config.context_size.to_string();
     let port = config.port.to_string();
     let gpu_layers = config.gpu_layers.to_string();
+    let threads = config.threads.to_string();
+    let parallel = config.parallel.to_string();
+    let batch_size = config.batch_size.to_string();
+    let ubatch_size = config.ubatch_size.to_string();
+    let mtp_n_max = config.mtp_n_max.to_string();
     let mut command = Command::new(&server);
     command.args([
         "-m",
@@ -365,10 +384,22 @@ fn start_configured_server(config: DesktopConfig) -> Result<u32, String> {
         &port,
         "-c",
         &context,
+        "--batch-size",
+        &batch_size,
+        "--threads",
+        &threads,
+        "--parallel",
+        &parallel,
+        "-ub",
+        &ubatch_size,
     ]);
     if config.gpu_layers >= 0 {
         command.args(["-ngl", &gpu_layers]);
     }
+    if config.flash_attention { command.args(["--flash-attn", "on"]); }
+    if config.cache_type != "off" { command.args(["--cache-type-k", &config.cache_type, "--cache-type-v", &config.cache_type]); }
+    if config.mtp_enabled { command.args(["--spec-type", "draft-mtp", "--spec-draft-n-max", &mtp_n_max]); }
+    if config.server_metrics { command.arg("--metrics"); }
     command
         .current_dir(server.parent().unwrap_or(Path::new(".")))
         .spawn()
