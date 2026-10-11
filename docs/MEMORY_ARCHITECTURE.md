@@ -95,16 +95,19 @@ précision manquante au lieu de choisir arbitrairement une version.
 
 ## État du dépôt et ordre de mise en œuvre
 
-L'UI actuelle fournit seulement l'historique récent local (20 tours stockés,
-12 réinjectés) et un bouton d'effacement. Ce n'est pas encore une mémoire
-long-terme.
+L'UI fournit l'historique récent local (20 tours stockés, 12 réinjectés) et un
+premier magasin long-terme explicite. Il est append-only, synchronisé sur disque,
+associe chaque souvenir à sa provenance `user_asserted`, récupère les entrées par
+termes et date, et oublie par tombstone. Aucun message du chat n'est promu
+automatiquement en souvenir. Le fichier est actuellement un TSV auditable dans le
+profil de l'application ; il sera migré vers SQLite avant les index et migrations.
 
-1. `memory_store.rs` : SQLite, migrations, épisodes append-only et tombstones.
+1. migration `memory_store.rs` : SQLite, migrations, épisodes append-only et tombstones.
 2. `memory_retrieval.rs` : BM25 + temps + provenance, sans dépendance vectorielle
    obligatoire.
 3. `memory_policy.rs` : extraction de candidats, consentement, conflits et
    promotion contrôlée.
-4. UI : inspecter, corriger, supprimer et exporter chaque souvenir.
+4. UI : corriger et exporter chaque souvenir ; la liste et l'oubli explicite sont présents.
 5. `tests/memory_*` : oubli, conflit, source, reprise après crash et LoCoMo.
 
 ## Références primaires

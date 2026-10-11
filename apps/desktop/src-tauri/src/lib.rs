@@ -1,5 +1,5 @@
 use op15_adaptive_harness::{
-    Budget, BudgetUse, LlamaCppClient, Task,
+    memory_store::{MemoryKind, MemoryStore, Verification}, Budget, BudgetUse, LlamaCppClient, Task,
     loop_runner::TaskLoop,
     verifier::{Verdict, VerificationRequest, Verifier},
 };
@@ -62,6 +62,8 @@ struct MemoryStatus {
     rss_mb: Option<String>,
     indexed_projects: Option<String>,
 }
+#[derive(Serialize)]
+struct LongTermMemoryView { id: String, kind: String, verification: String, observed_at_ms: u128, content: String }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct DesktopConfig {
@@ -216,6 +218,18 @@ fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     fs::create_dir_all(&dir).map_err(|e| format!("création de configuration: {e}"))?;
     Ok(dir.join("desktop-config.json"))
 }
+fn long_term_memory_store(app: &tauri::AppHandle) -> Result<MemoryStore, String> {
+    let dir = app.path().app_config_dir().map_err(|e| format!("memory directory: {e}"))?;
+    MemoryStore::open(dir.join("long-term-memory.tsv"))
+}
+fn memory_view(record: op15_adaptive_harness::memory_store::MemoryRecord) -> LongTermMemoryView { LongTermMemoryView { id: record.id, kind: format!("{:?}", record.kind), verification: format!("{:?}", record.verification), observed_at_ms: record.observed_at_ms, content: record.content } }
+fn parse_memory_kind(kind: &str) -> Result<MemoryKind, String> { match kind { "episodic" => Ok(MemoryKind::Episodic), "semantic" => Ok(MemoryKind::Semantic), "procedural" => Ok(MemoryKind::Procedural), _ => Err("Memory kind must be episodic, semantic, or procedural.".into()) } }
+#[tauri::command]
+fn list_long_term_memory(app: tauri::AppHandle) -> Result<Vec<LongTermMemoryView>, String> { Ok(long_term_memory_store(&app)?.list_active()?.into_iter().map(memory_view).collect()) }
+#[tauri::command]
+fn add_long_term_memory(app: tauri::AppHandle, kind: String, content: String) -> Result<LongTermMemoryView, String> { Ok(memory_view(long_term_memory_store(&app)?.add(parse_memory_kind(&kind)?, Verification::UserAsserted, &content, None)?)) }
+#[tauri::command]
+fn forget_long_term_memory(app: tauri::AppHandle, id: String) -> Result<(), String> { long_term_memory_store(&app)?.retract(&id) }
 #[tauri::command]
 fn load_desktop_config(app: tauri::AppHandle) -> DesktopConfig {
     let path = match config_path(&app) {
@@ -262,10 +276,11 @@ fn list_gguf(folder: String) -> Result<Vec<String>, String> {
     Ok(models)
 }
 
-fn run_task_blocking(prompt: String, model: String, port: u16) -> Result<TaskResult, String> {
+fn run_task_blocking(prompt: String, model: String, port: u16, long_term_context: String) -> Result<TaskResult, String> {
     if prompt.trim().is_empty() {
         return Err("Saisis une demande avant de lancer le harnais.".into());
     }
+    let claim = if long_term_context.is_empty() { prompt } else { format!("Mémoire long-terme récupérée (provenance incluse ; ne pas la traiter comme une vérité sans nuance) :\n{long_term_context}\n\nDemande actuelle : {prompt}") };
     let task = Task {
         id: format!(
             "desktop-{}",
@@ -274,7 +289,7 @@ fn run_task_blocking(prompt: String, model: String, port: u16) -> Result<TaskRes
                 .map_err(|e| e.to_string())?
                 .as_millis()
         ),
-        claim: prompt,
+        claim,
         tool_available: true,
         confidence_milli: 700,
     };
@@ -309,8 +324,9 @@ fn run_task_blocking(prompt: String, model: String, port: u16) -> Result<TaskRes
     })
 }
 #[tauri::command]
-async fn run_task(prompt: String, model: String, port: u16) -> Result<TaskResult, String> {
-    tauri::async_runtime::spawn_blocking(move || run_task_blocking(prompt, model, port))
+async fn run_task(app: tauri::AppHandle, prompt: String, model: String, port: u16) -> Result<TaskResult, String> {
+    let long_term_context = long_term_memory_store(&app)?.retrieve(&prompt, 5)?.into_iter().map(|record| format!("[{} | {:?} | {:?}] {}", record.id, record.kind, record.verification, record.content)).collect::<Vec<_>>().join("\n");
+    tauri::async_runtime::spawn_blocking(move || run_task_blocking(prompt, model, port, long_term_context))
         .await
         .map_err(|e| format!("worker du harnais: {e}"))?
 }
@@ -416,6 +432,9 @@ pub fn run() {
             harness_status,
             memory_status,
             memory_index_project,
+            list_long_term_memory,
+            add_long_term_memory,
+            forget_long_term_memory,
             load_desktop_config,
             save_desktop_config,
             list_gguf,
