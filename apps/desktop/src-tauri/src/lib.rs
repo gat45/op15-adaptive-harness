@@ -1,4 +1,6 @@
 use op15_adaptive_harness::{
+    interaction::assess,
+    reasoning_router::route,
     memory_store::{MemoryKind, MemoryStore, Verification}, Budget, BudgetUse, LlamaCppClient, Task,
     loop_runner::TaskLoop,
     verifier::{Verdict, VerificationRequest, Verifier},
@@ -46,6 +48,8 @@ struct TaskResult {
     trace_events: usize,
     independently_verified: bool,
     elapsed_ms: u128,
+    interaction_mode: String,
+    reasoning_lenses: String,
 }
 #[derive(Serialize)]
 struct LauncherStatus {
@@ -281,6 +285,14 @@ fn run_task_blocking(prompt: String, model: String, port: u16, long_term_context
         return Err("Saisis une demande avant de lancer le harnais.".into());
     }
     let claim = if long_term_context.is_empty() { prompt } else { format!("Mémoire long-terme récupérée (provenance incluse ; ne pas la traiter comme une vérité sans nuance) :\n{long_term_context}\n\nDemande actuelle : {prompt}") };
+    let interaction = assess(&claim);
+    let reasoning_lenses = route(&claim)
+        .lenses
+        .into_iter()
+        .map(|lens| lens.label())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let interaction_mode = format!("{} · {reasoning_lenses}", interaction.mode.label());
     let task = Task {
         id: format!(
             "desktop-{}",
@@ -321,6 +333,8 @@ fn run_task_blocking(prompt: String, model: String, port: u16, long_term_context
         trace_events: result.trace.0.len(),
         independently_verified: false,
         elapsed_ms: started.elapsed().as_millis(),
+        interaction_mode,
+        reasoning_lenses,
     })
 }
 #[tauri::command]

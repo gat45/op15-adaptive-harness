@@ -31,6 +31,7 @@ Ce dépôt commence par les contrats et l'évaluation. Voir :
 
 - [Références complètes](SOURCES.md)
 - [Feuille de route](TODO.md)
+- [Architecture cognitive intégrée](docs/COGNITIVE_ARCHITECTURE.md)
 - [Architecture](ARCHITECTURE.md)
 - [Périmètre métacognitif et protocole](METACOGNITION_SCOPE.md)
 

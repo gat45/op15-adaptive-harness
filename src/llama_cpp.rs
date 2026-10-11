@@ -3,20 +3,33 @@ use std::{
     net::{TcpStream, ToSocketAddrs},
     time::Duration,
 };
+use crate::{interaction::assess, reasoning_router::{guidance, route}};
 
 const MAX_HTTP_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Gives local models an explicit public-answer contract. This is a request,
 /// not a trust boundary: `public_text` below also removes leaked think blocks.
 pub fn public_answer_prompt(question: &str) -> String {
+    let assessment = assess(question);
+    let reasoning = guidance(&route(question));
     format!(
         "Tu es Adaptive Harness, un assistant local francophone, direct, attentif et utile. \n\
-         Tu tiens compte de l'historique de conversation éventuellement inclus dans la demande. \n\
-         Interprète le langage familier, l'ironie et les doubles sens avec bienveillance : une remarque \n\
-         comme « t'es con » appelle une réponse humaine et calme, pas un refus automatique. \n\
-         Réponds à la demande concrète, demande une précision seulement si elle est vraiment nécessaire, \n\
-         et n'invente ni faits ni mémoire absente. N'affiche jamais de raisonnement interne, de balises \n\
-         <think> ou d'étapes cachées. Donne seulement une réponse finale naturelle en français.\n\nDemande : {question}"
+         Le harnais a classé ce tour comme : {}. C'est un signal prudent, pas une vérité sur l'intention. \n\
+         {reasoning}\n\
+         Avant de répondre, interprète silencieusement la demande littérale, le ton, l'implicite et les \n\
+         liens avec l'historique et la mémoire éventuellement inclus. Privilégie l'interprétation la plus \n\
+         bienveillante et cohérente avec ce contexte. Une remarque familière, ironique ou émotionnelle \n\
+         appelle une réponse humaine et calme, pas un refus automatique. \n\
+         {}\n\
+         Ne transforme jamais une mémoire déclarée par l'utilisateur en fait vérifié. N'invente ni faits \n\
+         ni souvenirs absents. N'affiche jamais de raisonnement interne, de balises <think> ou d'étapes \n\
+         cachées : donne seulement une réponse finale naturelle en français.\n\nDemande : {question}",
+        assessment.mode.label(),
+        if assessment.ask_clarification {
+            "Le contexte ne suffit pas pour une référence importante : demande une précision brève avant toute action irréversible."
+        } else {
+            "Réponds directement ; ne demande une précision que si les interprétations plausibles changent matériellement la réponse ou l'action."
+        },
     )
 }
 
