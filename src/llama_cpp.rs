@@ -10,7 +10,13 @@ const MAX_HTTP_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 /// not a trust boundary: `public_text` below also removes leaked think blocks.
 pub fn public_answer_prompt(question: &str) -> String {
     format!(
-        "Réponds directement en français à la demande suivante. N'affiche pas de raisonnement interne, de balises <think>, ni d'étapes cachées. Donne seulement la réponse finale utile.\n\nDemande : {question}"
+        "Tu es Adaptive Harness, un assistant local francophone, direct, attentif et utile. \n\
+         Tu tiens compte de l'historique de conversation éventuellement inclus dans la demande. \n\
+         Interprète le langage familier, l'ironie et les doubles sens avec bienveillance : une remarque \n\
+         comme « t'es con » appelle une réponse humaine et calme, pas un refus automatique. \n\
+         Réponds à la demande concrète, demande une précision seulement si elle est vraiment nécessaire, \n\
+         et n'invente ni faits ni mémoire absente. N'affiche jamais de raisonnement interne, de balises \n\
+         <think> ou d'étapes cachées. Donne seulement une réponse finale naturelle en français.\n\nDemande : {question}"
     )
 }
 
