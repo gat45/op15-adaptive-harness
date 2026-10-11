@@ -4,6 +4,8 @@ use op15_adaptive_harness::{
     Budget, BudgetUse, LlamaCppClient, Task,
 };
 use serde::Serialize;
+use std::{path::PathBuf, process::Command};
+use tauri::Manager;
 
 struct UnverifiedVerifier;
 impl Verifier for UnverifiedVerifier {
@@ -16,6 +18,9 @@ impl Verifier for UnverifiedVerifier {
 struct HarnessStatus { controller_ready: bool, llama_endpoint: String, llama_reachable: bool, verification_rule: String, voice_state: String }
 #[derive(Serialize)]
 struct TaskResult { decision: String, observation: String, trace_events: usize, independently_verified: bool }
+
+#[derive(Serialize)]
+struct LauncherStatus { bundled: bool, file_exists: bool, message: String }
 
 #[tauri::command]
 fn harness_status() -> HarnessStatus {
@@ -36,5 +41,28 @@ async fn run_task(prompt: String, model: String) -> Result<TaskResult, String> {
     tauri::async_runtime::spawn_blocking(move || run_task_blocking(prompt, model)).await.map_err(|e| format!("harness worker failed: {e}"))?
 }
 
+fn bundled_launcher_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .resource_dir()
+        .map(|directory| directory.join("resources").join("llama_launcher.exe"))
+        .map_err(|error| format!("Unable to resolve bundled launcher: {error}"))
+}
+
+#[tauri::command]
+fn launcher_status(app: tauri::AppHandle) -> LauncherStatus {
+    match bundled_launcher_path(&app) {
+        Ok(path) if path.is_file() => LauncherStatus { bundled: true, file_exists: true, message: "Bundled GGUF launcher is ready.".into() },
+        Ok(path) => LauncherStatus { bundled: true, file_exists: false, message: format!("Bundled launcher not found at {}.", path.display()) },
+        Err(message) => LauncherStatus { bundled: true, file_exists: false, message },
+    }
+}
+
+#[tauri::command]
+fn launch_llama_launcher(app: tauri::AppHandle) -> Result<u32, String> {
+    let path = bundled_launcher_path(&app)?;
+    if !path.is_file() { return Err(format!("Bundled GGUF launcher is missing: {}", path.display())); }
+    Command::new(path).spawn().map(|child| child.id()).map_err(|error| format!("Unable to start bundled GGUF launcher: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { tauri::Builder::default().plugin(tauri_plugin_opener::init()).invoke_handler(tauri::generate_handler![harness_status, run_task]).run(tauri::generate_context!()).expect("error while running Adaptive Harness desktop"); }
+pub fn run() { tauri::Builder::default().plugin(tauri_plugin_opener::init()).invoke_handler(tauri::generate_handler![harness_status, run_task, launcher_status, launch_llama_launcher]).run(tauri::generate_context!()).expect("error while running Adaptive Harness desktop"); }

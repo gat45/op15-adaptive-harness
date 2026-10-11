@@ -4,6 +4,7 @@ import "./App.css";
 
 type Status = { controller_ready: boolean; llama_endpoint: string; llama_reachable: boolean; verification_rule: string; voice_state: string };
 type TaskResult = { decision: string; observation: string; trace_events: number; independently_verified: boolean };
+type LauncherStatus = { bundled: boolean; file_exists: boolean; message: string };
 const pages = ["Chat", "Agent", "Memoire", "Outils MCP", "Modeles", "Profiler", "Benchmarks", "Parametres"] as const;
 type Page = typeof pages[number];
 
@@ -17,6 +18,19 @@ function Unavailable({ page }: { page: Exclude<Page, "Chat" | "Agent"> }) {
     "Parametres": "Les moteurs voix et les permissions d'outils ne sont pas encore exposes ici."
   };
   return <article><p className="role">{page.toUpperCase()}</p><p>{notices[page]}</p><p className="rule">Etat affiche: non disponible, aucune valeur simulee.</p></article>;
+}
+
+function Launcher() {
+  const [status, setStatus] = useState<LauncherStatus | null>(null);
+  const [message, setMessage] = useState("");
+  const inspect = () => invoke<LauncherStatus>("launcher_status").then(setStatus).catch((error) => setMessage(String(error)));
+  const start = async () => {
+    setMessage("");
+    try { const pid = await invoke<number>("launch_llama_launcher"); setMessage(`Lanceur GGUF demarre (PID ${pid}). Actualise ensuite l'etat llama.cpp.`); }
+    catch (error) { setMessage(String(error)); }
+  };
+  useEffect(() => { inspect(); }, []);
+  return <article><p className="role">LANCEUR GGUF INTEGRE</p><p>Le lanceur est livre avec l’application. Il ne demarre qu’apres ton clic.</p><p><button onClick={inspect}>Verifier le lanceur</button><button onClick={start} disabled={!status?.file_exists}>Demarrer le lanceur GGUF</button></p><p className="rule">{status?.message ?? "Verification du lanceur integre..."}</p>{message && <p className="error">{message}</p>}</article>;
 }
 
 export default function App() {
@@ -37,5 +51,5 @@ export default function App() {
   }
   const chat = <><article><p className="role">UTILISATEUR</p><p>{prompt}</p>{result && <><p className="role">OBSERVATION LLAMA.CPP</p><pre>{result.observation || "Aucune sortie."}</pre></>}{error && <p className="error">{error}</p>}</article><form onSubmit={submit}><textarea aria-label="Demande" value={prompt} onChange={(e) => setPrompt(e.target.value)} /><button type="submit" disabled={running || !status?.llama_reachable}>{running ? "Execution..." : "Envoyer"}</button></form></>;
   const agent = <article><p className="role">DECISION ACTUELLE</p><dl><dt>Decision</dt><dd>{result?.decision ?? "aucune"}</dd><dt>Trace</dt><dd>{result ? `${result.trace_events} evenement(s)` : "aucune"}</dd><dt>Preuve</dt><dd>{result?.independently_verified ? "verifiee" : "non verifiee"}</dd></dl><p className="rule">{status?.verification_rule}</p></article>;
-  return <main><aside><h1>ADAPTIVE<br/>HARNESS</h1><nav>{pages.map((item) => <button className={item === page ? "active" : ""} onClick={() => setPage(item)} key={item}>{item}</button>)}</nav></aside><section className="conversation"><header><div><strong>{page === "Chat" ? "Conversation locale" : page}</strong><small>{status?.llama_endpoint ?? "Connexion..."}</small></div>{page === "Chat" && <label>Modele <input value={model} onChange={(e) => setModel(e.target.value)} /></label>}</header>{page === "Chat" ? chat : page === "Agent" ? agent : <Unavailable page={page} />}</section><aside className="inspector"><h2>ETAT</h2><dl><dt>Controleur</dt><dd>{status?.controller_ready ? "pret" : "inconnu"}</dd><dt>llama.cpp</dt><dd>{status ? (status.llama_reachable ? "accessible" : "indisponible") : "verification..."}</dd><dt>Voix</dt><dd>{status?.voice_state ?? "inconnu"}</dd></dl><button onClick={refresh}>Actualiser</button></aside><footer>CPU N/A | GPU N/A | VRAM N/A | RAM N/A | tok/s N/A | TTFT N/A</footer></main>;
+  return <main><aside><h1>ADAPTIVE<br/>HARNESS</h1><nav>{pages.map((item) => <button className={item === page ? "active" : ""} onClick={() => setPage(item)} key={item}>{item}</button>)}</nav></aside><section className="conversation"><header><div><strong>{page === "Chat" ? "Conversation locale" : page}</strong><small>{status?.llama_endpoint ?? "Connexion..."}</small></div>{page === "Chat" && <label>Modele <input value={model} onChange={(e) => setModel(e.target.value)} /></label>}</header>{page === "Chat" ? chat : page === "Agent" ? agent : page === "Modeles" ? <Launcher /> : <Unavailable page={page} />}</section><aside className="inspector"><h2>ETAT</h2><dl><dt>Controleur</dt><dd>{status?.controller_ready ? "pret" : "inconnu"}</dd><dt>llama.cpp</dt><dd>{status ? (status.llama_reachable ? "accessible" : "indisponible") : "verification..."}</dd><dt>Voix</dt><dd>{status?.voice_state ?? "inconnu"}</dd></dl><button onClick={refresh}>Actualiser</button></aside><footer>CPU N/A | GPU N/A | VRAM N/A | tok/s N/A | TTFT N/A</footer></main>;
 }
