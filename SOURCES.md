@@ -151,3 +151,13 @@ une piste documentée, jamais une validation automatique ou une dépendance.
 - https://github.com/ProsusAI/MemEval
 - https://github.com/scikit-learn-contrib/MAPIE
 - https://github.com/modelcontextprotocol/servers/security
+# Références complémentaires — contrôle de l'amélioration
+
+- [Open-Sable](https://github.com/IdeoaLabs/Open-Sable) — référence d'architecture locale pour objectifs, mémoire et permissions ; non intégré comme dépendance.
+- [Garudust Agent](https://github.com/garudust-org/garudust-agent) — référence Rust à auditer ; le dépôt n'était pas accessible pendant cette passe.
+- [AGNT](https://github.com/agnt-gg/agnt) — référence produit pour objectifs autonomes et reprise ; non intégré comme dépendance.
+- [Engram](https://github.com/radotsvetkov/engram) — journal d'audit signé et compétences A/B ; modèle à étudier pour la persistance des traces.
+- [Mnesio](https://github.com/mnesio/mnesio) — politiques versionnées, shadow mode et gate ; inspire `policy_registry.rs`.
+- [Rust Self-Learning Memory](https://github.com/d-o-hub/rust-self-learning-memory) — mémoire épisodique et checkpoints, référence à évaluer.
+- [MemMesh](https://github.com/ThinkfleetAI/memmesh) — mémoire locale Rust et MCP, référence à évaluer.
+- [Aura Memory](https://github.com/teolex2020/aura-memory) — mémoire cognitive et adaptation bornée, référence à évaluer.
