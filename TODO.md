@@ -68,3 +68,16 @@
   sans importer de dépendance de production par défaut.
 - [ ] Documenter séparément les indicateurs fonctionnels testables et les
   hypothèses philosophiques non testables dans ce projet.
+
+## M8 — apprendre à contrôler l'agent
+
+- [ ] Livrer `SelfModel` versionné : capacités, limites, ressources, outils,
+  permissions, erreurs récurrentes et incertitude calibrée par tâche.
+- [ ] Créer un modèle du monde limité aux actions dotées de post-conditions et
+  comparer prédiction/réalité après chaque exécution.
+- [ ] Ajouter un registre de candidates de stratégie : hypothèse, périmètre,
+  version, jeu d'essai, métriques, régressions, rollback et verdict.
+- [ ] Évaluer les intervalles conformes pour abstention/routage, sans les
+  confondre avec une preuve de vérité.
+- [ ] Garder Avalanche, DreamerV3, MUSE et CRITIC isolés comme références ou
+  expériences, hors chemin de production par défaut.

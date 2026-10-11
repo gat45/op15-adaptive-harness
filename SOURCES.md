@@ -120,3 +120,9 @@ une piste documentée, jamais une validation automatique ou une dépendance.
 - https://github.com/andres-villavicencio-dev/smallville-agents
 - https://arxiv.org/abs/2308.08708
 - https://doi.org/10.1016/j.tics.2025.10.011
+- https://doi.org/10.1016/j.neunet.2025.108131
+- https://github.com/danijar/dreamerv3
+- https://github.com/ContinualAI/avalanche
+- https://arxiv.org/abs/2107.07511
+- https://arxiv.org/abs/2305.11738
+- https://aiagentindex.mit.edu/

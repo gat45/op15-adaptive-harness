@@ -26,6 +26,15 @@ La synthèse MIDCA/LIDA/Reflexion/Voyager est une hypothèse de recherche. Elle
 ne devient une architecture de production qu'après comparaisons à budget égal
 contre le harnais de base.
 
+## Contrats d'apprentissage du contrôle
+
+Le système ne "s'améliore" jamais par une modification libre de son code ou de
+ses permissions. Il formule une candidate de politique, la soumet à un banc
+d'essai séparé, mesure les régressions, puis la promeut ou l'annule. Le modèle
+de soi est un registre de mesures calibrées ; le modèle du monde est un
+prédicteur borné des conséquences d'actions observables. Les deux sont des
+entrées du contrôleur, jamais des sources d'autorité non vérifiées.
+
 ## Frontières
 
 - DSPy, GEPA, Optuna et BoTorch sont des optimiseurs hors ligne.
