@@ -1,13 +1,2 @@
 use op15_adaptive_harness::{Budget, BudgetUse, Controller, EvidenceSet, LlamaCppClient, Task};
-fn main() {
-    let model = std::env::var("LLAMA_CPP_MODEL").unwrap_or_else(|_| "F:\\tiers\\Nanbeige4.2-3B-Q8_0.gguf".into());
-    let task = Task { id: "demo".into(), claim: "demo-claim".into(), tool_available: true, confidence_milli: 700 };
-    let decision = Controller::decide(&task, &EvidenceSet::default(), Budget { wall_ms: 1_000, tokens: 500, ram_mb: 512, tool_calls: 2 }, BudgetUse { wall_ms: 100, tokens: 50, ram_mb: 32, tool_calls: 1 });
-    println!("task={} decision={decision:?}", task.id);
-    if matches!(decision, op15_adaptive_harness::Decision::Retrieve) {
-        match LlamaCppClient::local(model).complete("Réponds en un mot : état de récupération", 12) {
-            Ok(result) => println!("llama_observation={:?} total_tokens={:?}", result.text, result.total_tokens),
-            Err(error) => eprintln!("llama_unavailable={error}"),
-        }
-    }
-}
+fn main() { let model = std::env::var("LLAMA_CPP_MODEL").unwrap_or_else(|_| "F:\\tiers\\Nanbeige4.2-3B-Q8_0.gguf".into()); let task = Task { id: "demo".into(), claim: "demo-claim".into(), tool_available: true, confidence_milli: 700 }; let decision = Controller::decide(&task, &EvidenceSet::default(), Budget { wall_ms: 1_000, tokens: 500, ram_mb: 512, tool_calls: 2 }, BudgetUse { wall_ms: 100, tokens: 50, ram_mb: 32, tool_calls: 1 }); println!("task={} decision={decision:?}", task.id); if matches!(decision, op15_adaptive_harness::Decision::Retrieve) { match LlamaCppClient::local(model).complete("Réponds en une phrase courte : observation récupérée", 24) { Ok(result) => println!("llama_observation={:?} total_tokens={:?}", result.text, result.total_tokens), Err(error) => eprintln!("llama_unavailable={error}") } } }

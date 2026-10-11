@@ -52,3 +52,10 @@ L'exécutable raccorde maintenant `Decision::Retrieve` au serveur llama.cpp loca
 via `/v1/completions`. La génération est conservée comme observation : elle ne
 peut pas produire `Answer` sans une preuve indépendante ajoutée au contrôleur.
 Le test `llama_cpp_e2e` exige que le serveur local soit démarré sur le port 8080.
+
+## MVP de contrôle sécurisé
+
+Le MVP ajoute une autorisation typée (`permissions`), une machine de transitions
+transactionnelles (`action`), un exécuteur raccordable (`runner`) et leur suite
+de tests. Aucun effet externe n'est exécuté par défaut : une action doit être
+proposée, autorisée, démarrée, constatée puis confirmée par un oracle.

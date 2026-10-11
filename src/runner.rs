@@ -1,0 +1,3 @@
+use crate::{controller::{Controller, Decision, Task}, budget::{Budget, BudgetUse}, evidence::EvidenceSet, trace::{CausalTrace, TraceEvent}, verifier::Verifier};
+pub struct TaskRunner;
+impl TaskRunner { pub fn run(task: &Task, evidence: &EvidenceSet, budget: Budget, next: BudgetUse, verifier: &dyn Verifier, trace: &mut CausalTrace) -> Decision { let decision = Controller::decide(task, evidence, budget, next); let verdict = matches!(decision, Decision::Verify).then(|| verifier.verify().passed); trace.push(TraceEvent { task_id: task.id.clone(), prediction: format!("{decision:?}"), observation: "controller decision".into(), decision: decision.clone(), verifier_verdict: verdict }); decision } }
