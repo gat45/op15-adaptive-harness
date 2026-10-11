@@ -47,3 +47,8 @@ invariants P0 : preuve indépendante avant `ANSWER`, arrêt sous contrainte de
 budget, abstention, modèle de compétence fondé sur verdicts, coût matériel E2E
 et état durable atomique. La suite de tests couvre ces comportements ; elle ne
 constitue pas encore un benchmark LLM ou matériel OP15.
+
+L'exécutable raccorde maintenant `Decision::Retrieve` au serveur llama.cpp local
+via `/v1/completions`. La génération est conservée comme observation : elle ne
+peut pas produire `Answer` sans une preuve indépendante ajoutée au contrôleur.
+Le test `llama_cpp_e2e` exige que le serveur local soit démarré sur le port 8080.
