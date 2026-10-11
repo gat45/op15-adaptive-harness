@@ -286,10 +286,11 @@ fn run_task_blocking(prompt: String, model: String, port: u16, long_term_context
     }
     let claim = if long_term_context.is_empty() { prompt } else { format!("Mémoire long-terme récupérée (provenance incluse ; ne pas la traiter comme une vérité sans nuance) :\n{long_term_context}\n\nDemande actuelle : {prompt}") };
     let interaction = assess(&claim);
-    let reasoning_lenses = route(&claim)
-        .lenses
-        .into_iter()
-        .map(|lens| lens.label())
+    let reasoning_plan = route(&claim);
+    let reasoning_lenses = reasoning_plan
+        .selected
+        .iter()
+        .map(|selection| format!("{} : {}", selection.contract.lens.label(), selection.justification))
         .collect::<Vec<_>>()
         .join(" · ");
     let interaction_mode = format!("{} · {reasoning_lenses}", interaction.mode.label());
