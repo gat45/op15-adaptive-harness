@@ -41,3 +41,22 @@
 - [ ] Normaliser les traces HTP/XDNA (prefill, dispatch, transfert, sync,
   fallback) ; sélectionner un backend avant génération.
 - [ ] Ne lancer aucune campagne device avant reconnexion manuelle et verrou NPU.
+
+## M6 — métacognition vérifiable
+
+- [ ] Écrire une trace causale par décision : contexte, hypothèse, incertitude,
+  budget, action choisie, résultat, vérification et cause d'échec.
+- [ ] Construire un modèle de compétence calibré par famille de tâches et
+  mesurer Brier score, ECE, risque sélectif et couverture.
+- [ ] Rendre toute explication traçable vers les signaux réellement disponibles ;
+  interdire les justifications post-hoc non étayées.
+- [ ] Mettre en place la récupération d'épisodes comparables et évaluer sa
+  valeur contre une mémoire de logs non structurée.
+- [ ] Mesurer la détection d'impasse, l'arrêt utile et la reprise après échec.
+
+## M7 — recherche cognitive, sans allégation de conscience
+
+- [ ] Étudier Soar, ACT-R, CLARION, LIDA et Hyperon comme sources de concepts,
+  sans importer de dépendance de production par défaut.
+- [ ] Documenter séparément les indicateurs fonctionnels testables et les
+  hypothèses philosophiques non testables dans ce projet.

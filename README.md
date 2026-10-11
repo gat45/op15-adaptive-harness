@@ -10,13 +10,10 @@ Réduire le coût par tâche réussie vérifiée, sans promotion automatique d'u
 stratégie, d'un prompt ou d'un backend. Le contrôleur choisit entre réponse,
 récupération, raisonnement, outil, vérification, changement de backend et arrêt.
 
-```text
-UI/API → Harness → contrôleur budget/risque → RAG · mémoire · outils · runtime
-                         │
-                     Governor gate
-                         │
-            traces, oracles, A/B, rollback, provenance
-```
+Le périmètre est celui d'un agent autonome **métacognitif au sens
+fonctionnel** : il maintient un modèle auditable de ses capacités, de son
+incertitude, de ses actions et de leurs résultats. Le projet ne prétend ni
+implémenter ni démontrer une conscience subjective.
 
 ## Dépôts de travail
 
@@ -35,6 +32,7 @@ Ce dépôt commence par les contrats et l'évaluation. Voir :
 - [Références complètes](SOURCES.md)
 - [Feuille de route](TODO.md)
 - [Architecture](ARCHITECTURE.md)
+- [Périmètre métacognitif et protocole](METACOGNITION_SCOPE.md)
 
 ## Règles de promotion
 
