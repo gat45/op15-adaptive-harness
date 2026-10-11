@@ -21,3 +21,11 @@ propriétaire du projet ; comparer ce hash avant toute mise à jour du binaire.
 
 Après son démarrage, utiliser **Actualiser** dans l'interface : le statut doit
 indiquer que llama.cpp est accessible sur `127.0.0.1:8080`.
+
+## Prérequis d'exécution
+
+Le lanceur est fourni, mais ce dépôt ne contient ni modèle `.gguf` ni
+`llama-server.exe`. Il doit donc savoir où trouver son modèle et son serveur,
+ou recevoir cette configuration par son propre mécanisme. La présence du
+lanceur ne signifie jamais que llama.cpp est démarré : l'interface affiche
+séparément le statut réel du port `8080`.
