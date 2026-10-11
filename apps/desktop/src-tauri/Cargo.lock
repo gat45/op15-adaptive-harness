@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "op15-adaptive-harness",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",

@@ -1,96 +1,397 @@
 use op15_adaptive_harness::{
+    Budget, BudgetUse, LlamaCppClient, Task,
     loop_runner::TaskLoop,
     verifier::{Verdict, VerificationRequest, Verifier},
-    Budget, BudgetUse, LlamaCppClient, Task,
 };
-use serde::Serialize;
-use std::{net::{TcpStream, ToSocketAddrs}, path::PathBuf, process::Command, time::Duration};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    io::{Read, Write},
+    net::{TcpStream, ToSocketAddrs},
+    path::{Path, PathBuf},
+    process::Command,
+    time::{Duration, Instant},
+};
 use tauri::Manager;
+
+const MEMORY_HOST: &str = "127.0.0.1";
+const MEMORY_PORT: u16 = 9749;
 
 struct UnverifiedVerifier;
 impl Verifier for UnverifiedVerifier {
     fn verify(&self, _: &VerificationRequest) -> Verdict {
-        Verdict { passed: false, oracle: "no_oracle_configured".into(), artifact: String::new(), verified_claim: None, summary: "No independent oracle is configured for desktop chat.".into() }
+        Verdict {
+            passed: false,
+            oracle: "no_oracle_configured".into(),
+            artifact: String::new(),
+            verified_claim: None,
+            summary: "No independent oracle is configured for desktop chat.".into(),
+        }
     }
 }
 
 #[derive(Serialize)]
-struct HarnessStatus { controller_ready: bool, llama_endpoint: String, llama_reachable: bool, verification_rule: String, voice_state: String }
+struct HarnessStatus {
+    controller_ready: bool,
+    llama_endpoint: String,
+    llama_reachable: bool,
+    verification_rule: String,
+    voice_state: String,
+}
 #[derive(Serialize)]
-struct TaskResult { decision: String, observation: String, model_error: Option<String>, trace_events: usize, independently_verified: bool }
-
+struct TaskResult {
+    decision: String,
+    observation: String,
+    model_error: Option<String>,
+    trace_events: usize,
+    independently_verified: bool,
+    elapsed_ms: u128,
+}
 #[derive(Serialize)]
-struct LauncherStatus { bundled: bool, file_exists: bool, llama_reachable: bool, message: String }
-
+struct LauncherStatus {
+    bundled: bool,
+    file_exists: bool,
+    llama_reachable: bool,
+    message: String,
+}
 #[derive(Serialize)]
-struct MemoryStatus { reachable: bool, dashboard_url: String, message: String }
-
-#[tauri::command]
-fn harness_status() -> HarnessStatus {
-    let client = LlamaCppClient::local("local");
-    HarnessStatus { controller_ready: true, llama_endpoint: "http://127.0.0.1:8080/v1/completions".into(), llama_reachable: client.is_reachable(), verification_rule: "A verdict must bind the claim and response.".into(), voice_state: "No STT/TTS adapter installed".into() }
+struct MemoryStatus {
+    reachable: bool,
+    dashboard_url: String,
+    message: String,
+    rss_mb: Option<String>,
+    indexed_projects: Option<String>,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+struct DesktopConfig {
+    gguf_path: String,
+    server_path: String,
+    model_name: String,
+    model_folder: String,
+    context_size: u32,
+    gpu_layers: i32,
+    port: u16,
+}
+impl DesktopConfig {
+    fn normalized(mut self) -> Self {
+        if self.model_name.trim().is_empty() {
+            self.model_name = "local".into();
+        }
+        if self.context_size == 0 {
+            self.context_size = 4096;
+        }
+        if self.port == 0 {
+            self.port = 8080;
+        }
+        self
+    }
 }
 
 #[tauri::command]
-fn memory_status() -> MemoryStatus {
-    let reachable = ("127.0.0.1", 9749)
+fn harness_status(port: Option<u16>) -> HarnessStatus {
+    let port = port.unwrap_or(8080);
+    let mut client = LlamaCppClient::local("local");
+    client.port = port;
+    HarnessStatus { controller_ready: true, llama_endpoint: format!("http://127.0.0.1:{port}/v1/completions"), llama_reachable: client.is_reachable(), verification_rule: "Une réponse reste non vérifiée tant qu'un oracle indépendant n'a pas validé la même affirmation.".into(), voice_state: "Aucun adaptateur STT/TTS local n'est configuré".into() }
+}
+fn tcp_reachable(host: &str, port: u16) -> bool {
+    (host, port)
         .to_socket_addrs()
         .ok()
-        .and_then(|mut addresses| addresses.next())
-        .is_some_and(|address| TcpStream::connect_timeout(&address, Duration::from_millis(500)).is_ok());
-    MemoryStatus {
-        reachable,
-        dashboard_url: "http://127.0.0.1:9749/?tab=stats".into(),
-        message: if reachable { "Codebase Memory MCP is reachable.".into() } else { "Codebase Memory MCP is not reachable on port 9749.".into() },
+        .and_then(|mut a| a.next())
+        .is_some_and(|a| TcpStream::connect_timeout(&a, Duration::from_millis(700)).is_ok())
+}
+fn http_request(
+    method: &str,
+    host: &str,
+    port: u16,
+    path: &str,
+    body: Option<&str>,
+) -> Result<String, String> {
+    let mut stream = TcpStream::connect((host, port)).map_err(|e| format!("connexion: {e}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(4)))
+        .map_err(|e| e.to_string())?;
+    let payload = body.unwrap_or("");
+    let req = format!(
+        "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        payload.len()
+    );
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| format!("écriture: {e}"))?;
+    let mut raw = String::new();
+    stream
+        .read_to_string(&mut raw)
+        .map_err(|e| format!("lecture: {e}"))?;
+    let (head, response) = raw.split_once("\r\n\r\n").ok_or("réponse HTTP invalide")?;
+    if !head.contains(" 200 ") && !head.contains(" 201 ") && !head.contains(" 202 ") {
+        return Err(format!("service mémoire: {response}"));
+    }
+    Ok(response.to_owned())
+}
+fn json_field(body: &str, key: &str) -> Option<String> {
+    let value = body.split_once(&format!("\"{key}\":"))?.1.trim_start();
+    if let Some(rest) = value.strip_prefix('"') {
+        Some(rest.split('"').next()?.to_owned())
+    } else {
+        Some(value.split([',', '}', ']']).next()?.trim().to_owned())
     }
 }
-
-fn run_task_blocking(prompt: String, model: String) -> Result<TaskResult, String> {
-    if prompt.trim().is_empty() { return Err("Enter a request before starting the harness.".into()); }
-    let task = Task { id: format!("desktop-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_millis()), claim: prompt, tool_available: true, confidence_milli: 700 };
-    let client = LlamaCppClient::local(model);
-    let result = TaskLoop::run(&task, Budget { wall_ms: 10_000, tokens: 256, ram_mb: 2_048, tool_calls: 1 }, BudgetUse { wall_ms: 1_000, tokens: 128, ram_mb: 32, tool_calls: 1 }, &client, &UnverifiedVerifier, 1);
-    Ok(TaskResult { decision: format!("{:?}", result.decision), observation: result.observation, model_error: result.model_error, trace_events: result.trace.0.len(), independently_verified: false })
+#[tauri::command]
+fn memory_status() -> MemoryStatus {
+    let dashboard_url = format!("http://{MEMORY_HOST}:{MEMORY_PORT}/?tab=stats");
+    match http_request("GET", MEMORY_HOST, MEMORY_PORT, "/api/processes", None) {
+        Ok(body) => MemoryStatus {
+            reachable: true,
+            dashboard_url,
+            message: "Codebase Memory MCP répond sur le port 9749.".into(),
+            rss_mb: json_field(&body, "self_rss_mb"),
+            indexed_projects: http_request(
+                "GET",
+                MEMORY_HOST,
+                MEMORY_PORT,
+                "/api/index-status",
+                None,
+            )
+            .ok()
+            .map(|v| {
+                if v.trim() == "[]" {
+                    "0".into()
+                } else {
+                    "au moins 1".into()
+                }
+            }),
+        },
+        Err(_) => MemoryStatus {
+            reachable: false,
+            dashboard_url,
+            message: "Codebase Memory MCP ne répond pas sur 127.0.0.1:9749.".into(),
+            rss_mb: None,
+            indexed_projects: None,
+        },
+    }
+}
+fn escape_json(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+#[tauri::command]
+fn memory_index_project(root_path: String, project_name: String) -> Result<String, String> {
+    let root = PathBuf::from(root_path.trim());
+    if !root.is_dir() {
+        return Err("Le dossier à indexer n'existe pas.".into());
+    }
+    let body = format!(
+        r#"{{"root_path":"{}","project_name":"{}"}}"#,
+        escape_json(&root.display().to_string()),
+        escape_json(project_name.trim())
+    );
+    http_request("POST", MEMORY_HOST, MEMORY_PORT, "/api/index", Some(&body))
 }
 
+fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("dossier de configuration: {e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("création de configuration: {e}"))?;
+    Ok(dir.join("desktop-config.json"))
+}
 #[tauri::command]
-async fn run_task(prompt: String, model: String) -> Result<TaskResult, String> {
-    tauri::async_runtime::spawn_blocking(move || run_task_blocking(prompt, model)).await.map_err(|e| format!("harness worker failed: {e}"))?
+fn load_desktop_config(app: tauri::AppHandle) -> DesktopConfig {
+    let path = match config_path(&app) {
+        Ok(path) => path,
+        Err(_) => return DesktopConfig::default().normalized(),
+    };
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<DesktopConfig>(&text).ok())
+        .unwrap_or_default()
+        .normalized()
+}
+#[tauri::command]
+fn save_desktop_config(
+    app: tauri::AppHandle,
+    config: DesktopConfig,
+) -> Result<DesktopConfig, String> {
+    let config = config.normalized();
+    let path = config_path(&app)?;
+    let temp = path.with_extension("tmp");
+    let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::write(&temp, content).map_err(|e| format!("écriture de configuration: {e}"))?;
+    fs::rename(temp, path).map_err(|e| format!("finalisation de configuration: {e}"))?;
+    Ok(config)
+}
+#[tauri::command]
+fn list_gguf(folder: String) -> Result<Vec<String>, String> {
+    let path = PathBuf::from(folder.trim());
+    if !path.is_dir() {
+        return Err("Le dossier des modèles n'existe pas.".into());
+    }
+    let mut models = fs::read_dir(&path)
+        .map_err(|e| format!("lecture du dossier: {e}"))?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("gguf"))
+        })
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>();
+    models.sort();
+    Ok(models)
+}
+
+fn run_task_blocking(prompt: String, model: String, port: u16) -> Result<TaskResult, String> {
+    if prompt.trim().is_empty() {
+        return Err("Saisis une demande avant de lancer le harnais.".into());
+    }
+    let task = Task {
+        id: format!(
+            "desktop-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| e.to_string())?
+                .as_millis()
+        ),
+        claim: prompt,
+        tool_available: true,
+        confidence_milli: 700,
+    };
+    let mut client = LlamaCppClient::local(model);
+    client.port = port;
+    let started = Instant::now();
+    let result = TaskLoop::run(
+        &task,
+        Budget {
+            wall_ms: 10_000,
+            tokens: 256,
+            ram_mb: 2_048,
+            tool_calls: 1,
+        },
+        BudgetUse {
+            wall_ms: 1_000,
+            tokens: 128,
+            ram_mb: 32,
+            tool_calls: 1,
+        },
+        &client,
+        &UnverifiedVerifier,
+        1,
+    );
+    Ok(TaskResult {
+        decision: format!("{:?}", result.decision),
+        observation: result.observation,
+        model_error: result.model_error,
+        trace_events: result.trace.0.len(),
+        independently_verified: false,
+        elapsed_ms: started.elapsed().as_millis(),
+    })
+}
+#[tauri::command]
+async fn run_task(prompt: String, model: String, port: u16) -> Result<TaskResult, String> {
+    tauri::async_runtime::spawn_blocking(move || run_task_blocking(prompt, model, port))
+        .await
+        .map_err(|e| format!("worker du harnais: {e}"))?
 }
 
 fn bundled_launcher_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resource_dir()
-        .map(|directory| directory.join("resources").join("llama_launcher.exe"))
-        .map_err(|error| format!("Unable to resolve bundled launcher: {error}"))
+        .map(|d| d.join("resources").join("llama_launcher.exe"))
+        .map_err(|e| format!("résolution du lanceur: {e}"))
 }
-
 #[tauri::command]
 fn launcher_status(app: tauri::AppHandle) -> LauncherStatus {
     let llama_reachable = LlamaCppClient::local("local").is_reachable();
-    match bundled_launcher_path(&app) {
-        Ok(path) if path.is_file() && llama_reachable => LauncherStatus { bundled: true, file_exists: true, llama_reachable, message: "GGUF launcher bundled; llama.cpp is reachable on port 8080.".into() },
-        Ok(path) if path.is_file() => LauncherStatus { bundled: true, file_exists: true, llama_reachable, message: "GGUF launcher bundled, but llama.cpp is not reachable on port 8080.".into() },
-        Ok(path) => LauncherStatus { bundled: true, file_exists: false, llama_reachable, message: format!("Bundled launcher not found at {}.", path.display()) },
-        Err(message) => LauncherStatus { bundled: true, file_exists: false, llama_reachable, message },
-    }
+    match bundled_launcher_path(&app) { Ok(path) if path.is_file() && llama_reachable => LauncherStatus { bundled: true, file_exists: true, llama_reachable, message: "Lanceur GGUF inclus ; llama.cpp répond sur le port 8080.".into() }, Ok(path) if path.is_file() => LauncherStatus { bundled: true, file_exists: true, llama_reachable, message: "Lanceur GGUF inclus. Configure un modèle puis démarre un serveur, ou utilise le lanceur.".into() }, Ok(path) => LauncherStatus { bundled: true, file_exists: false, llama_reachable, message: format!("Lanceur inclus introuvable : {}.", path.display()) }, Err(message) => LauncherStatus { bundled: true, file_exists: false, llama_reachable, message } }
 }
-
 #[tauri::command]
 fn launch_llama_launcher(app: tauri::AppHandle) -> Result<u32, String> {
-    if LlamaCppClient::local("local").is_reachable() { return Err("llama.cpp is already reachable on port 8080; do not start a second server.".into()); }
+    if LlamaCppClient::local("local").is_reachable() {
+        return Err("llama.cpp répond déjà sur le port 8080.".into());
+    }
     let path = bundled_launcher_path(&app)?;
-    if !path.is_file() { return Err(format!("Bundled GGUF launcher is missing: {}", path.display())); }
+    if !path.is_file() {
+        return Err(format!("Lanceur GGUF introuvable : {}", path.display()));
+    }
     let working_directory = path
         .parent()
-        .ok_or("Bundled launcher has no parent directory.")?
+        .ok_or("Le lanceur n'a pas de dossier parent.")?
         .to_owned();
     Command::new(&path)
         .current_dir(working_directory)
         .spawn()
         .map(|child| child.id())
-        .map_err(|error| format!("Unable to start bundled GGUF launcher: {error}"))
+        .map_err(|e| format!("démarrage du lanceur: {e}"))
+}
+#[tauri::command]
+fn start_configured_server(config: DesktopConfig) -> Result<u32, String> {
+    let config = config.normalized();
+    if tcp_reachable("127.0.0.1", config.port) {
+        return Err(format!(
+            "Un serveur répond déjà sur le port {}.",
+            config.port
+        ));
+    }
+    let server = PathBuf::from(&config.server_path);
+    let model = PathBuf::from(&config.gguf_path);
+    if !server.is_file() {
+        return Err("Choisis le fichier llama-server.exe dans Paramètres.".into());
+    }
+    if !model.is_file()
+        || !model
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("gguf"))
+    {
+        return Err("Choisis un fichier .gguf existant dans Modèles.".into());
+    }
+    let context = config.context_size.to_string();
+    let port = config.port.to_string();
+    let gpu_layers = config.gpu_layers.to_string();
+    let mut command = Command::new(&server);
+    command.args([
+        "-m",
+        model.to_string_lossy().as_ref(),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        &port,
+        "-c",
+        &context,
+    ]);
+    if config.gpu_layers >= 0 {
+        command.args(["-ngl", &gpu_layers]);
+    }
+    command
+        .current_dir(server.parent().unwrap_or(Path::new(".")))
+        .spawn()
+        .map(|child| child.id())
+        .map_err(|e| format!("démarrage de llama-server: {e}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { tauri::Builder::default().plugin(tauri_plugin_opener::init()).invoke_handler(tauri::generate_handler![harness_status, memory_status, run_task, launcher_status, launch_llama_launcher]).run(tauri::generate_context!()).expect("error while running Adaptive Harness desktop"); }
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            harness_status,
+            memory_status,
+            memory_index_project,
+            load_desktop_config,
+            save_desktop_config,
+            list_gguf,
+            run_task,
+            launcher_status,
+            launch_llama_launcher,
+            start_configured_server
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running Adaptive Harness desktop");
+}

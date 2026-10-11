@@ -4,4 +4,3 @@
 fn main() {
     adaptive_harness_desktop_lib::run()
 }
-
