@@ -13,13 +13,14 @@ impl Verifier for UnverifiedVerifier {
 }
 
 #[derive(Serialize)]
-struct HarnessStatus { controller_ready: bool, llama_endpoint: String, verification_rule: String, voice_state: String }
+struct HarnessStatus { controller_ready: bool, llama_endpoint: String, llama_reachable: bool, verification_rule: String, voice_state: String }
 #[derive(Serialize)]
 struct TaskResult { decision: String, observation: String, trace_events: usize, independently_verified: bool }
 
 #[tauri::command]
 fn harness_status() -> HarnessStatus {
-    HarnessStatus { controller_ready: true, llama_endpoint: "http://127.0.0.1:8080/v1/completions".into(), verification_rule: "A verdict must bind the claim and response.".into(), voice_state: "No STT/TTS adapter installed".into() }
+    let client = LlamaCppClient::local("local");
+    HarnessStatus { controller_ready: true, llama_endpoint: "http://127.0.0.1:8080/v1/completions".into(), llama_reachable: client.is_reachable(), verification_rule: "A verdict must bind the claim and response.".into(), voice_state: "No STT/TTS adapter installed".into() }
 }
 
 fn run_task_blocking(prompt: String, model: String) -> Result<TaskResult, String> {

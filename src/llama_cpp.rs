@@ -1,4 +1,4 @@
-use std::{io::{Read, Write}, net::TcpStream, time::Duration};
+use std::{io::{Read, Write}, net::{TcpStream, ToSocketAddrs}, time::Duration};
 
 const MAX_HTTP_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -10,6 +10,9 @@ pub struct LlamaCppClient { pub host: String, pub port: u16, pub model: String }
 
 impl LlamaCppClient {
     pub fn local(model: impl Into<String>) -> Self { Self { host: "127.0.0.1".into(), port: 8080, model: model.into() } }
+    pub fn is_reachable(&self) -> bool {
+        (self.host.as_str(), self.port).to_socket_addrs().ok().and_then(|mut addresses| addresses.next()).is_some_and(|address| TcpStream::connect_timeout(&address, Duration::from_millis(500)).is_ok())
+    }
     pub fn complete(&self, prompt: &str, max_tokens: u16) -> Result<Completion, String> {
         let body = format!(r#"{{"model":"{}","prompt":"{}","max_tokens":{},"temperature":0}}"#, escape(&self.model), escape(prompt), max_tokens);
         let mut stream = TcpStream::connect((self.host.as_str(), self.port)).map_err(|e| format!("connect: {e}"))?;
