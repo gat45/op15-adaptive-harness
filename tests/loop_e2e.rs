@@ -1,0 +1,3 @@
+use op15_adaptive_harness::{loop_runner::TaskLoop, verifier::StaticVerifier, Budget,BudgetUse,LlamaCppClient,Task,Decision,verifier::Verdict};
+#[test] fn loop_promotes_only_after_external_verdict() { let task=Task{id:"t".into(),claim:"claim".into(),tool_available:true,confidence_milli:700}; let verifier=StaticVerifier(Verdict{passed:true,oracle:"test".into(),artifact:"artifact".into()}); let client=LlamaCppClient::local("F:\\tiers\\Nanbeige4.2-3B-Q8_0.gguf"); let r=TaskLoop::run(&task,Budget{wall_ms:1000,tokens:50,ram_mb:100,tool_calls:2},BudgetUse{wall_ms:100,tokens:10,ram_mb:1,tool_calls:1},&client,&verifier,2); assert_eq!(r.decision,Decision::Answer); assert_eq!(r.trace.0.len(),1); }
+
