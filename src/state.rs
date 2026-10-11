@@ -1,0 +1,3 @@
+use std::{fs, io, path::Path};
+#[derive(Debug, Clone, PartialEq, Eq)] pub struct DurableState { pub task_id: String, pub status: String, pub last_decision: String }
+impl DurableState { pub fn save_atomic(&self, path: impl AsRef<Path>) -> io::Result<()> { let path = path.as_ref(); let tmp = path.with_extension("tmp"); fs::write(&tmp, format!("{}\n{}\n{}\n", self.task_id, self.status, self.last_decision))?; fs::rename(tmp, path) } pub fn load(path: impl AsRef<Path>) -> io::Result<Self> { let text = fs::read_to_string(path)?; let mut v = text.lines(); Ok(Self { task_id: v.next().unwrap_or_default().into(), status: v.next().unwrap_or_default().into(), last_decision: v.next().unwrap_or_default().into() }) } }

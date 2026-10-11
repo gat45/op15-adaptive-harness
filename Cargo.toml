@@ -1,0 +1,16 @@
+[package]
+name = "op15-adaptive-harness"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal verifiable adaptive controller for OP15 experiments"
+license = "MIT"
+
+[lib]
+name = "op15_adaptive_harness"
+path = "src/lib.rs"
+
+[[bin]]
+name = "op15-adaptive-harness"
+path = "src/main.rs"
+
+[dependencies]

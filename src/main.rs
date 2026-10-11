@@ -1,0 +1,2 @@
+use op15_adaptive_harness::{Budget, BudgetUse, Controller, EvidenceSet, Task};
+fn main() { let task = Task { id: "demo".into(), claim: "demo-claim".into(), tool_available: true, confidence_milli: 700 }; let decision = Controller::decide(&task, &EvidenceSet::default(), Budget { wall_ms: 1_000, tokens: 500, ram_mb: 512, tool_calls: 2 }, BudgetUse { wall_ms: 100, tokens: 50, ram_mb: 32, tool_calls: 1 }); println!("task={} decision={decision:?}", task.id); }

@@ -39,3 +39,11 @@ Ce dépôt commence par les contrats et l'évaluation. Voir :
 Une candidate n'est promue que si elle est testée hors de son jeu
 d'optimisation, ne dégrade pas une capacité critique et améliore la réussite à
 budget égal ou le coût par succès vérifié. Sinon : `REJECT` ou `INCONCLUSIF`.
+
+## Noyau exécutable validé
+
+Le premier noyau Rust est compilable sans dépendance externe. Il applique les
+invariants P0 : preuve indépendante avant `ANSWER`, arrêt sous contrainte de
+budget, abstention, modèle de compétence fondé sur verdicts, coût matériel E2E
+et état durable atomique. La suite de tests couvre ces comportements ; elle ne
+constitue pas encore un benchmark LLM ou matériel OP15.
