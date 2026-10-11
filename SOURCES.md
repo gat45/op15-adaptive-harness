@@ -1,0 +1,105 @@
+# Sources et dépôts
+
+Cette liste conserve les URL de recherche fournies pour le projet. Une URL est
+une piste documentée, jamais une validation automatique ou une dépendance.
+
+## Projets personnels et OP15
+
+- https://github.com/GaTmaNnes
+- https://github.com/gat45?tab=repositories
+- https://github.com/GaTmaNnes/gouvernord
+- https://github.com/gat45/geniex_harness
+- https://github.com/gat45/jarvix-memory
+- https://github.com/GaTmaNnes/rag-jarvix
+- https://github.com/GaTmaNnes/rag-vision-ofa-nvenc2
+- https://github.com/gat45/op15-suite
+- https://github.com/gat45/xpu-observer
+- https://github.com/gat45/adaptive-xdna-runtime
+- https://github.com/gat45/xdna-emu
+- https://github.com/gat45/ggml-hexagon-op15
+- https://github.com/gat45/ggml-hexagon
+- https://github.com/gat45/htp-npu-runtime
+- https://github.com/GaTmaNnes/snapdragon-d2-planner
+- https://github.com/GaTmaNnes/d2-quant-planner
+
+## Harnais, agents et orchestration
+
+- https://github.com/langchain-ai/langgraph
+- https://github.com/huggingface/smolagents
+- https://github.com/pydantic/pydantic-ai
+- https://github.com/All-Hands-AI/OpenHands
+- https://github.com/sausheong/harness
+- https://github.com/Eldergenix/Durable-agent-harness
+- https://github.com/ramannanda9/agent-harness
+- https://github.com/google-research/budget-aware-agent
+- https://github.com/lm-sys/RouteLLM
+- https://github.com/aurelio-labs/semantic-router
+
+## Mémoire, RAG et outils
+
+- https://github.com/mem0ai/mem0
+- https://arxiv.org/abs/2504.19413
+- https://github.com/letta-ai/letta
+- https://arxiv.org/abs/2402.17753
+- https://arxiv.org/abs/2303.11366
+- https://github.com/HKUDS/LightRAG
+- https://github.com/taylorparsons/hipporag
+- https://github.com/mo-linyuan/HippoRAG2
+- https://github.com/awesome-llms-labs/awesome-rag
+- https://github.com/run-llama/llama_index
+- https://github.com/qdrant/qdrant
+- https://github.com/AkariAsai/self-rag
+- https://arxiv.org/abs/2310.11511
+- https://github.com/modelcontextprotocol/servers
+- https://github.com/modelcontextprotocol/python-sdk
+- https://github.com/modelcontextprotocol/typescript-sdk
+- https://github.com/open-telemetry/opentelemetry-python
+
+## Raisonnement, métaraisonnement et allocation
+
+- https://people.eecs.berkeley.edu/~russell/papers/metareasoning.pdf
+- https://arxiv.org/abs/2602.16699
+- https://arxiv.org/abs/2604.14853
+- https://aclanthology.org/2026.findings-acl.1399/
+- https://arxiv.org/abs/2501.19393
+- https://arxiv.org/abs/2210.03629
+- https://arxiv.org/abs/2305.10601
+- https://arxiv.org/abs/2303.17651
+- https://arxiv.org/abs/2203.11171
+- https://arxiv.org/abs/2406.18665
+
+## Optimisation, observation et reproductibilité
+
+- https://github.com/stanfordnlp/dspy
+- https://github.com/gepa-ai/gepa
+- https://arxiv.org/abs/2507.19457
+- https://github.com/optuna/optuna
+- https://github.com/pytorch/botorch
+- https://github.com/mlflow/mlflow
+- https://github.com/Arize-ai/phoenix
+- https://github.com/braintrustdata/braintrust-sdk
+
+## Inférence et accélérateurs
+
+- https://github.com/ggml-org/llama.cpp
+- https://github.com/ggml-org/llama.cpp/blob/master/ggml/include/ggml-backend.h
+- https://github.com/ggml-org/llama.cpp/tree/master/ggml/src/ggml-hexagon
+- https://github.com/kan-linux/ggml-hexagon
+- https://github.com/ggml-org/llama.cpp/pull/29977
+- https://github.com/sgl-project/sglang
+- https://github.com/vllm-project/vllm
+- https://github.com/ROCm/FastFlowLM
+- https://github.com/Xilinx/mlir-aie
+- https://github.com/Xilinx/XRT
+- https://github.com/SafeAILab/EAGLE
+- https://specdecode-bench.github.io/
+
+## Méta-apprentissage et catalogues
+
+- https://arxiv.org/abs/1703.03400
+- https://arxiv.org/abs/1611.05763
+- https://github.com/learnables/learn2learn
+- https://github.com/YintongHuo/awesome-agent-trajectory
+- https://github.com/Anandesh-Sharma/awesome-agent-harnesses
+- https://huggingface.co/papers
+- https://arxiv.org/search/?query=agent+harness&searchtype=all
