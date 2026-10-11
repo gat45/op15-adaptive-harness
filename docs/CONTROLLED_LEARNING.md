@@ -27,6 +27,10 @@ proposer -> exécuter en shadow mode -> verdict indépendant
 - L'éligibilité ne change pas le comportement actif.
 - La promotion ou le rejet est une décision explicite de l'opérateur ou de la CI.
 - Une candidate refusée ou promue ne reçoit plus de nouveaux résultats shadow.
+- Une seule politique est active dans ce registre minimal ; la multi-stratégie
+  exigera un périmètre explicite et des comparaisons séparées.
+- Le snapshot est écrit atomiquement avant remplacement, afin de survivre à une
+  interruption entre deux exécutions.
 
 ## Sources étudiées et traduction locale
 
