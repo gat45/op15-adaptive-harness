@@ -123,12 +123,19 @@ pub struct ReasoningResult {
     pub unresolved_questions: Vec<&'static str>,
     pub required_checks: Vec<VerificationRequirement>,
 }
+const MAX_NORMAL_LENSES: usize = 3;
+const MAX_DEEP_LENSES: usize = 5;
 fn add(result: &mut ReasoningResult, lens: ReasoningLens, justification: &'static str, deep: bool) {
     if result
         .selected
         .iter()
         .any(|item| item.contract.lens == lens)
-        || (!deep && result.selected.len() >= 3)
+        || result.selected.len()
+            >= if deep {
+                MAX_DEEP_LENSES
+            } else {
+                MAX_NORMAL_LENSES
+            }
     {
         return;
     }
@@ -332,7 +339,9 @@ mod tests {
     }
     #[test]
     fn complex_request_can_use_more_lenses() {
-        assert!(route("Analyse approfondie : pourquoi mon NPU a régressé, compare les mesures et la contradiction").selected.len() > 3);
+        let selected = route("Analyse approfondie : pourquoi mon NPU a régressé, compare les mesures et la contradiction").selected;
+        assert!(selected.len() > 3);
+        assert!(selected.len() <= MAX_DEEP_LENSES);
     }
     #[test]
     fn causal_test_prefers_information_per_cost() {

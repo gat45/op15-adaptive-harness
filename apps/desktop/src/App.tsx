@@ -19,12 +19,16 @@ type TaskResult = {
   elapsed_ms: number;
   generation_elapsed_ms: number | null;
   completion_tokens: number | null;
+  prompt_tokens: number | null;
+  cached_tokens: number | null;
   generation_tokens_per_second: number | null;
   server_prompt_ms: number | null;
+  server_prompt_per_second: number | null;
   server_predicted_per_second: number | null;
   interaction_mode: string;
   reasoning_lenses: string;
   specialists: string;
+  trace_summary: string;
 };
 type LauncherStatus = {
   file_exists: boolean;
@@ -1054,7 +1058,9 @@ export default function App() {
             "Aucun rôle spécialisé requis pour ce tour."}
         </dd>
         <dt>Trace</dt>
-        <dd>{result ? `${result.trace_events} événement(s)` : "aucune"}</dd>
+        <dd>{result?.trace_summary ?? "aucune"}</dd>
+        <dt>Contexte serveur</dt>
+        <dd>{result?.prompt_tokens != null ? `${result.prompt_tokens} tokens traités${result.cached_tokens != null ? ` · ${result.cached_tokens} réutilisés depuis le cache` : ""}` : "non fourni par le serveur"}</dd>
         <dt>Oracle</dt>
         <dd>{result?.independently_verified ? "validé" : "non configuré"}</dd>
       </dl>
@@ -1153,7 +1159,7 @@ export default function App() {
             ? ` · génération : ${result.generation_tokens_per_second.toFixed(1)} tok/s (${result.completion_tokens} tokens)`
           : " · tok/s : non fourni par le serveur"}
         {result?.server_prompt_ms != null
-          ? ` · préfill/TTFT approx. : ${result.server_prompt_ms.toFixed(0)} ms`
+          ? ` · préfill : ${result.server_prompt_ms.toFixed(0)} ms${result.server_prompt_per_second != null ? ` (${result.server_prompt_per_second.toFixed(1)} tok/s)` : ""}`
           : " · TTFT : non mesurable sans streaming"}
         {footerProfiler?.gpu_name
           ? ` · ${footerProfiler.gpu_name} : ${footerProfiler.gpu_utilization_percent ?? "?"}% · VRAM ${footerProfiler.gpu_vram_used_mb ?? "?"}/${footerProfiler.gpu_vram_total_mb ?? "?"} Mo (machine)`

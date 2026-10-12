@@ -15,7 +15,10 @@ pub struct LoopResult {
     pub trace: CausalTrace,
     pub generation_elapsed_ms: Option<u128>,
     pub completion_tokens: Option<u64>,
+    pub prompt_tokens: Option<u64>,
+    pub cached_tokens: Option<u64>,
     pub server_prompt_ms: Option<f64>,
+    pub server_prompt_per_second: Option<f64>,
     pub server_predicted_per_second: Option<f64>,
 }
 pub struct TaskLoop;
@@ -35,7 +38,10 @@ impl TaskLoop {
         let mut model_error = None;
         let mut generation_elapsed_ms = None;
         let mut completion_tokens = None;
+        let mut prompt_tokens = None;
+        let mut cached_tokens = None;
         let mut server_prompt_ms = None;
+        let mut server_prompt_per_second = None;
         let mut server_predicted_per_second = None;
         for step in 0..max_steps {
             let d = Controller::decide(task, &evidence, remaining, retrieve_cost);
@@ -51,7 +57,10 @@ impl TaskLoop {
                             trace,
                             generation_elapsed_ms,
                             completion_tokens,
+                            prompt_tokens,
+                            cached_tokens,
                             server_prompt_ms,
+                            server_prompt_per_second,
                             server_predicted_per_second,
                         };
                     };
@@ -65,7 +74,10 @@ impl TaskLoop {
                     observation = match result {
                         Ok(c) => {
                             completion_tokens = c.completion_tokens;
+                            prompt_tokens = c.prompt_tokens;
+                            cached_tokens = c.cached_tokens;
                             server_prompt_ms = c.prompt_ms;
+                            server_prompt_per_second = c.prompt_per_second;
                             server_predicted_per_second = c.predicted_per_second;
                             let answer = public_text(&c.text);
                             if answer.is_empty() {
@@ -112,7 +124,10 @@ impl TaskLoop {
                             trace,
                             generation_elapsed_ms,
                             completion_tokens,
+                            prompt_tokens,
+                            cached_tokens,
                             server_prompt_ms,
+                            server_prompt_per_second,
                             server_predicted_per_second,
                         };
                     }
@@ -125,7 +140,10 @@ impl TaskLoop {
                         trace,
                         generation_elapsed_ms,
                         completion_tokens,
+                        prompt_tokens,
+                        cached_tokens,
                         server_prompt_ms,
+                        server_prompt_per_second,
                         server_predicted_per_second,
                     };
                 }
@@ -138,7 +156,10 @@ impl TaskLoop {
             trace,
             generation_elapsed_ms,
             completion_tokens,
+            prompt_tokens,
+            cached_tokens,
             server_prompt_ms,
+            server_prompt_per_second,
             server_predicted_per_second,
         }
     }

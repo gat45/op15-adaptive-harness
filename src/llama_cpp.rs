@@ -2,6 +2,7 @@ use crate::{
     interaction::assess,
     reasoning_router::{guidance, route},
 };
+use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
     net::{TcpStream, ToSocketAddrs},
@@ -61,7 +62,10 @@ pub struct Completion {
     pub text: String,
     pub total_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    pub prompt_tokens: Option<u64>,
+    pub cached_tokens: Option<u64>,
     pub prompt_ms: Option<f64>,
+    pub prompt_per_second: Option<f64>,
     pub predicted_per_second: Option<f64>,
 }
 
@@ -90,12 +94,13 @@ impl LlamaCppClient {
             })
     }
     pub fn complete(&self, prompt: &str, max_tokens: u16) -> Result<Completion, String> {
-        let body = format!(
-            r#"{{"model":"{}","messages":[{{"role":"user","content":"{}"}}],"max_tokens":{},"temperature":0}}"#,
-            escape(&self.model),
-            escape(prompt),
-            max_tokens
-        );
+        let body = serde_json::to_string(&json!({
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0,
+        }))
+        .map_err(|error| format!("encode llama.cpp request: {error}"))?;
         let mut stream = TcpStream::connect((self.host.as_str(), self.port))
             .map_err(|e| format!("connect: {e}"))?;
         stream
@@ -114,21 +119,11 @@ impl LlamaCppClient {
             .write_all(request.as_bytes())
             .map_err(|e| format!("write: {e}"))?;
         let raw = read_limited(&mut stream)?;
-        let payload = raw
-            .split_once("\r\n\r\n")
-            .map(|(_, p)| p)
-            .ok_or("invalid HTTP response")?;
-        if !raw.starts_with("HTTP/1.1 200") {
+        let (status, payload) = raw.split_once("\r\n\r\n").ok_or("invalid HTTP response")?;
+        if !status.split_whitespace().any(|part| part == "200") {
             return Err(format!("llama.cpp returned: {payload}"));
         }
-        Ok(Completion {
-            text: json_string_after(payload, "\"content\":")
-                .ok_or("chat completion content missing")?,
-            total_tokens: json_number_after(payload, "\"total_tokens\":"),
-            completion_tokens: json_number_after(payload, "\"completion_tokens\":"),
-            prompt_ms: json_float_after(payload, "\"prompt_ms\":"),
-            predicted_per_second: json_float_after(payload, "\"predicted_per_second\":"),
-        })
+        completion_from_payload(payload)
     }
 }
 
@@ -143,73 +138,27 @@ fn read_limited(reader: &mut impl Read) -> Result<String, String> {
     }
     String::from_utf8(bytes).map_err(|_| "llama.cpp response is not valid UTF-8".into())
 }
-fn escape(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for character in value.chars() {
-        match character {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            '\u{08}' => escaped.push_str("\\b"),
-            '\u{0C}' => escaped.push_str("\\f"),
-            control if control.is_control() => {
-                use std::fmt::Write;
-                let _ = write!(escaped, "\\u{:04X}", control as u32);
-            }
-            other => escaped.push(other),
-        }
-    }
-    escaped
-}
-fn json_string_after(input: &str, key: &str) -> Option<String> {
-    let rest = input.split_once(key)?.1.trim_start();
-    let content = rest.strip_prefix('"')?;
-    let mut out = String::new();
-    let mut escaped = false;
-    for c in content.chars() {
-        if escaped {
-            out.push(match c {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                '\\' => '\\',
-                '"' => '"',
-                other => other,
-            });
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' {
-            return Some(out);
-        } else {
-            out.push(c);
-        }
-    }
-    None
-}
-fn json_number_after(input: &str, key: &str) -> Option<u64> {
-    input
-        .split_once(key)?
-        .1
-        .trim_start()
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect::<String>()
-        .parse()
-        .ok()
-}
-fn json_float_after(input: &str, key: &str) -> Option<f64> {
-    input
-        .split_once(key)?
-        .1
-        .trim_start()
-        .chars()
-        .take_while(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'))
-        .collect::<String>()
-        .parse()
-        .ok()
+fn completion_from_payload(payload: &str) -> Result<Completion, String> {
+    let value: Value = serde_json::from_str(payload)
+        .map_err(|error| format!("invalid llama.cpp JSON response: {error}"))?;
+    let text = value
+        .pointer("/choices/0/message/content")
+        .and_then(Value::as_str)
+        .ok_or("chat completion content missing or not text")?
+        .to_owned();
+    let number = |pointer: &str| value.pointer(pointer).and_then(Value::as_u64);
+    let float = |pointer: &str| value.pointer(pointer).and_then(Value::as_f64);
+    Ok(Completion {
+        text,
+        total_tokens: number("/usage/total_tokens"),
+        completion_tokens: number("/usage/completion_tokens")
+            .or_else(|| number("/timings/predicted_n")),
+        prompt_tokens: number("/usage/prompt_tokens").or_else(|| number("/timings/prompt_n")),
+        cached_tokens: number("/timings/cache_n"),
+        prompt_ms: float("/timings/prompt_ms"),
+        prompt_per_second: float("/timings/prompt_per_second"),
+        predicted_per_second: float("/timings/predicted_per_second"),
+    })
 }
 
 #[cfg(test)]
@@ -218,11 +167,12 @@ mod tests {
     #[test]
     fn parses_completion() {
         let p = r#"{"choices":[{"message":{"content":"ok\n"}}],"usage":{"total_tokens":12,"completion_tokens":5},"timings":{"prompt_ms":96.5,"predicted_per_second":31.5}}"#;
-        assert_eq!(json_string_after(p, "\"content\":"), Some("ok\n".into()));
-        assert_eq!(json_number_after(p, "\"total_tokens\":"), Some(12));
-        assert_eq!(json_number_after(p, "\"completion_tokens\":"), Some(5));
-        assert_eq!(json_float_after(p, "\"prompt_ms\":"), Some(96.5));
-        assert_eq!(json_float_after(p, "\"predicted_per_second\":"), Some(31.5));
+        let completion = completion_from_payload(p).unwrap();
+        assert_eq!(completion.text, "ok\n");
+        assert_eq!(completion.total_tokens, Some(12));
+        assert_eq!(completion.completion_tokens, Some(5));
+        assert_eq!(completion.prompt_ms, Some(96.5));
+        assert_eq!(completion.predicted_per_second, Some(31.5));
     }
     #[test]
     fn removes_complete_or_partial_thinking() {
@@ -243,7 +193,9 @@ mod tests {
         assert!(read_limited(&mut bytes).is_err());
     }
     #[test]
-    fn escapes_tabs_and_all_json_control_characters() {
-        assert_eq!(escape("a\tb\u{0001}\n"), "a\\tb\\u0001\\n");
+    fn serde_request_preserves_tabs_without_malformed_json() {
+        let request = serde_json::to_string(&json!({"content": "a\tb\u{0001}\n"})).unwrap();
+        let decoded: Value = serde_json::from_str(&request).unwrap();
+        assert_eq!(decoded["content"], "a\tb\u{0001}\n");
     }
 }

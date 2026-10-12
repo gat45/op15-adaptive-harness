@@ -21,6 +21,9 @@ use tauri::Manager;
 const MEMORY_HOST: &str = "127.0.0.1";
 const MEMORY_PORT: u16 = 9749;
 const MAX_TOOL_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_CURRENT_PROMPT_CHARS: usize = 12_000;
+const MAX_RECENT_CONTEXT_CHARS: usize = 4_000;
+const MAX_LONG_TERM_CONTEXT_CHARS: usize = 4_000;
 
 struct UnverifiedVerifier;
 impl Verifier for UnverifiedVerifier {
@@ -53,12 +56,16 @@ struct TaskResult {
     elapsed_ms: u128,
     generation_elapsed_ms: Option<u128>,
     completion_tokens: Option<u64>,
+    prompt_tokens: Option<u64>,
+    cached_tokens: Option<u64>,
     generation_tokens_per_second: Option<f64>,
     server_prompt_ms: Option<f64>,
+    server_prompt_per_second: Option<f64>,
     server_predicted_per_second: Option<f64>,
     interaction_mode: String,
     reasoning_lenses: String,
     specialists: String,
+    trace_summary: String,
 }
 #[derive(Serialize)]
 struct LauncherStatus {
@@ -608,6 +615,24 @@ fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     fs::create_dir_all(&dir).map_err(|e| format!("création de configuration: {e}"))?;
     Ok(dir.join("desktop-config.json"))
 }
+fn bounded_context(value: &str, limit: usize, label: &str) -> String {
+    let count = value.chars().count();
+    if count <= limit {
+        return value.trim().to_owned();
+    }
+    let head_len = limit.saturating_mul(3) / 4;
+    let tail_len = limit.saturating_sub(head_len);
+    let head = value.chars().take(head_len).collect::<String>();
+    let tail = value
+        .chars()
+        .rev()
+        .take(tail_len)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    format!("{head}\n\n[… {label} tronqué : {count} caractères, limite {limit} …]\n\n{tail}")
+}
 fn long_term_memory_store(app: &tauri::AppHandle) -> Result<MemoryStore, String> {
     let dir = app
         .path()
@@ -737,6 +762,9 @@ fn run_task_blocking(
     if prompt.trim().is_empty() {
         return Err("Saisis une demande avant de lancer le harnais.".into());
     }
+    let prompt = bounded_context(&prompt, MAX_CURRENT_PROMPT_CHARS, "demande");
+    let recent_context = bounded_context(&recent_context, MAX_RECENT_CONTEXT_CHARS, "historique");
+    let long_term_context = bounded_context(&long_term_context, MAX_LONG_TERM_CONTEXT_CHARS, "mémoire");
     let assignments = select_specialists(&prompt);
     let specialists = assignments
         .iter()
@@ -760,7 +788,7 @@ fn run_task_blocking(
     }
     context_sections.push(format!("Demande actuelle : {prompt}"));
     let claim = context_sections.join("\n\n");
-    let interaction = assess(&claim);
+    let interaction = assess(&prompt);
     let reasoning_plan = route(&prompt);
     let reasoning_lenses = reasoning_plan
         .selected
@@ -813,6 +841,13 @@ fn run_task_blocking(
     } else {
         "Réponse générée — non vérifiée".into()
     };
+    let trace_summary = format!(
+        "contexte {} caractères → mémoire {} → modèle local {} → oracle non configuré → {}",
+        prompt.chars().count(),
+        if long_term_context.is_empty() { "absente" } else { "récupérée" },
+        if result.model_error.is_some() { "en erreur" } else { "appelé" },
+        decision
+    );
     Ok(TaskResult {
         decision,
         observation: result.observation,
@@ -822,6 +857,8 @@ fn run_task_blocking(
         elapsed_ms: started.elapsed().as_millis(),
         generation_elapsed_ms: result.generation_elapsed_ms,
         completion_tokens: result.completion_tokens,
+        prompt_tokens: result.prompt_tokens,
+        cached_tokens: result.cached_tokens,
         generation_tokens_per_second: result
             .completion_tokens
             .zip(result.generation_elapsed_ms)
@@ -829,10 +866,12 @@ fn run_task_blocking(
                 (elapsed > 0).then(|| tokens as f64 / (elapsed as f64 / 1000.0))
             }),
         server_prompt_ms: result.server_prompt_ms,
+        server_prompt_per_second: result.server_prompt_per_second,
         server_predicted_per_second: result.server_predicted_per_second,
         interaction_mode,
         reasoning_lenses,
         specialists,
+        trace_summary,
     })
 }
 #[tauri::command]
