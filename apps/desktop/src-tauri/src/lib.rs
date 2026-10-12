@@ -9,14 +9,16 @@ use op15_adaptive_harness::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fs,
     io::{Read, Write},
     net::{TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
     process::Command,
+    sync::{Arc, Mutex, OnceLock, atomic::AtomicBool},
     time::{Duration, Instant},
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const MEMORY_HOST: &str = "127.0.0.1";
 const MEMORY_PORT: u16 = 9749;
@@ -24,6 +26,11 @@ const MAX_TOOL_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_CURRENT_PROMPT_CHARS: usize = 12_000;
 const MAX_RECENT_CONTEXT_CHARS: usize = 4_000;
 const MAX_LONG_TERM_CONTEXT_CHARS: usize = 4_000;
+static ACTIVE_STREAMS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+
+fn active_streams() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    ACTIVE_STREAMS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 struct UnverifiedVerifier;
 impl Verifier for UnverifiedVerifier {
@@ -66,6 +73,14 @@ struct TaskResult {
     reasoning_lenses: String,
     specialists: String,
     trace_summary: String,
+}
+#[derive(Clone, Serialize)]
+struct StreamEvent {
+    stream_id: String,
+    delta: String,
+    done: bool,
+    cancelled: bool,
+    error: Option<String>,
 }
 #[derive(Serialize)]
 struct LauncherStatus {
@@ -1012,6 +1027,72 @@ async fn run_task(
     .await
     .map_err(|e| format!("worker du harnais: {e}"))?
 }
+#[tauri::command]
+fn start_stream_task(
+    app: tauri::AppHandle,
+    stream_id: String,
+    prompt: String,
+    recent_context: String,
+    model: String,
+    port: u16,
+) -> Result<(), String> {
+    let stream_id = stream_id.trim().to_owned();
+    if stream_id.is_empty() || stream_id.len() > 128 {
+        return Err("Identifiant de flux invalide.".into());
+    }
+    let cancellation = Arc::new(AtomicBool::new(false));
+    {
+        let mut active = active_streams().lock().map_err(|_| "registre de flux indisponible")?;
+        if active.contains_key(&stream_id) {
+            return Err("Un flux possède déjà cet identifiant.".into());
+        }
+        active.insert(stream_id.clone(), cancellation.clone());
+    }
+    let persona = load_persona(app.clone());
+    let long_term_context = long_term_memory_store(&app)?
+        .retrieve(&prompt, 5)?
+        .into_iter()
+        .map(|record| format!("[{} | {:?} | {:?}] {}", record.id, record.kind, record.verification, record.content))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::thread::spawn(move || {
+        let current = bounded_context(&prompt, MAX_CURRENT_PROMPT_CHARS, "demande");
+        let recent = bounded_context(&recent_context, MAX_RECENT_CONTEXT_CHARS, "historique");
+        let memory = bounded_context(&long_term_context, MAX_LONG_TERM_CONTEXT_CHARS, "mémoire");
+        let assignments = select_specialists(&current);
+        let mut sections = vec![persona.prompt_context()];
+        if !recent.is_empty() { sections.push(format!("Historique récent (contexte de dialogue, non vérifié) :\n{recent}")); }
+        if !memory.is_empty() { sections.push(format!("Mémoire long-terme récupérée (provenance incluse ; ne pas la traiter comme une vérité sans nuance) :\n{memory}")); }
+        if !assignments.is_empty() { sections.push(format!("Rôles spécialisés sélectionnés (orientations, pas des oracles) : {}", specialist_guidance(&assignments))); }
+        sections.push(format!("Demande actuelle : {current}"));
+        let mut client = LlamaCppClient::local(model);
+        client.port = port;
+        let app_for_delta = app.clone();
+        let stream_for_delta = stream_id.clone();
+        let result = client.stream_public(
+            &op15_adaptive_harness::llama_cpp::public_answer_prompt(&sections.join("\n\n")),
+            768,
+            cancellation.as_ref(),
+            move |delta| {
+                let _ = app_for_delta.emit("harness-stream", StreamEvent { stream_id: stream_for_delta.clone(), delta: delta.to_owned(), done: false, cancelled: false, error: None });
+            },
+        );
+        let cancelled = cancellation.load(std::sync::atomic::Ordering::Relaxed);
+        let _ = app.emit("harness-stream", StreamEvent {
+            stream_id: stream_id.clone(), delta: String::new(), done: true, cancelled,
+            error: result.err().filter(|error| !cancelled || error != "stream cancelled by user"),
+        });
+        if let Ok(mut active) = active_streams().lock() { active.remove(&stream_id); }
+    });
+    Ok(())
+}
+#[tauri::command]
+fn cancel_stream_task(stream_id: String) -> bool {
+    active_streams().lock().ok().and_then(|active| active.get(stream_id.trim()).cloned()).map(|flag| {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        true
+    }).unwrap_or(false)
+}
 
 fn bundled_launcher_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
@@ -1152,6 +1233,8 @@ pub fn run() {
             save_desktop_config,
             list_gguf,
             run_task,
+            start_stream_task,
+            cancel_stream_task,
             launcher_status,
             launch_llama_launcher,
             start_configured_server

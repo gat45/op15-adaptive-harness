@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
@@ -90,6 +91,7 @@ type Config = {
   server_metrics: boolean;
 };
 type Turn = { role: string; text: string };
+type StreamEvent = { stream_id: string; delta: string; done: boolean; cancelled: boolean; error: string | null };
 type LongTermMemory = {
   id: string;
   kind: string;
@@ -985,7 +987,10 @@ export default function App() {
     [result, setResult] = useState<TaskResult | null>(null),
     [footerProfiler, setFooterProfiler] = useState<ProfilerStatus | null>(null),
     [error, setError] = useState(""),
-    [running, setRunning] = useState(false);
+    [running, setRunning] = useState(false),
+    [streaming, setStreaming] = useState(false),
+    [activeStreamId, setActiveStreamId] = useState<string | null>(null),
+    [streamDraft, setStreamDraft] = useState("");
   const refresh = () =>
     invoke<Status>("harness_status", { port: config.port || 8080 })
       .then(setStatus)
@@ -1029,6 +1034,42 @@ export default function App() {
         (t) => `${t.role === "user" ? "Utilisateur" : "Assistant"}: ${t.text}`,
       )
       .join("\n");
+    if (streaming) {
+      const streamId = crypto.randomUUID();
+      let answer = "";
+      setActiveStreamId(streamId);
+      setStreamDraft("");
+      setTurns((old) => [...old, { role: "user", text }].slice(-20));
+      const unlisten = await listen<StreamEvent>("harness-stream", (event) => {
+        const update = event.payload;
+        if (update.stream_id !== streamId) return;
+        if (update.delta) {
+          answer += update.delta;
+          setStreamDraft(answer);
+        }
+        if (update.done) {
+          if (answer.trim()) setTurns((old) => [...old, { role: "assistant", text: answer }].slice(-20));
+          if (update.error) setError(update.error);
+          if (update.cancelled) setError("Réponse progressive interrompue par l’utilisateur.");
+          setStreamDraft("");
+          setActiveStreamId(null);
+          setRunning(false);
+          void unlisten();
+          refresh();
+        }
+      });
+      try {
+        await invoke("start_stream_task", { streamId, prompt: text, recentContext: context, model: config.model_name, port: config.port || 8080 });
+      } catch (x) {
+        void unlisten();
+        setError(String(x));
+        setActiveStreamId(null);
+        setRunning(false);
+      } finally {
+        setPrompt("");
+      }
+      return;
+    }
     try {
       const response = await invoke<TaskResult>("run_task", {
         prompt: text,
@@ -1072,6 +1113,7 @@ export default function App() {
             <pre>{t.text}</pre>
           </div>
         ))}
+        {streamDraft && <div className="turn assistant"><p className="role">ADAPTIVE HARNESS — RÉPONSE EN COURS</p><pre>{streamDraft}</pre></div>}
         {result?.model_error && (
           <Notice kind="error">Erreur llama.cpp : {result.model_error}</Notice>
         )}
@@ -1105,6 +1147,8 @@ export default function App() {
         <button type="button" onClick={clear}>
           Effacer mémoire
         </button>
+        <label className="inline-control"><input type="checkbox" checked={streaming} onChange={(event) => setStreaming(event.target.checked)} /> Réponse progressive</label>
+        {activeStreamId && <button type="button" onClick={() => invoke("cancel_stream_task", { streamId: activeStreamId })}>Interrompre</button>}
         <button
           className="primary"
           disabled={running || !status?.llama_reachable}

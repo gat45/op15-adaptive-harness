@@ -4,8 +4,9 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::{
-    io::{Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{TcpStream, ToSocketAddrs},
+    sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
@@ -124,6 +125,77 @@ impl LlamaCppClient {
             return Err(format!("llama.cpp returned: {payload}"));
         }
         completion_from_payload(payload)
+    }
+
+    /// Streams public text fragments from the OpenAI-compatible llama.cpp SSE
+    /// endpoint. Reasoning-only deltas are deliberately ignored. Cancellation
+    /// closes this client request; it never labels an incomplete output as a
+    /// verified answer.
+    pub fn stream_public(
+        &self,
+        prompt: &str,
+        max_tokens: u16,
+        cancelled: &AtomicBool,
+        mut on_delta: impl FnMut(&str),
+    ) -> Result<String, String> {
+        let body = serde_json::to_string(&json!({
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0,
+            "stream": true,
+        }))
+        .map_err(|error| format!("encode llama.cpp stream request: {error}"))?;
+        let mut stream = TcpStream::connect((self.host.as_str(), self.port))
+            .map_err(|e| format!("connect: {e}"))?;
+        stream
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .map_err(|e| format!("read timeout: {e}"))?;
+        let request = format!(
+            "POST /v1/chat/completions HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nAccept: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            self.host,
+            body.len(),
+            body
+        );
+        stream.write_all(request.as_bytes()).map_err(|e| format!("write: {e}"))?;
+        let mut reader = BufReader::new(stream);
+        let mut status = String::new();
+        reader.read_line(&mut status).map_err(|e| format!("read status: {e}"))?;
+        if !status.split_whitespace().any(|part| part == "200") {
+            return Err(format!("llama.cpp stream returned: {}", status.trim()));
+        }
+        loop {
+            let mut header = String::new();
+            let read = reader.read_line(&mut header).map_err(|e| format!("read header: {e}"))?;
+            if read == 0 { return Err("llama.cpp stream ended before headers".into()); }
+            if header == "\r\n" { break; }
+        }
+        let mut output = String::new();
+        let mut line = String::new();
+        while !cancelled.load(Ordering::Relaxed) {
+            line.clear();
+            let read = reader.read_line(&mut line).map_err(|e| format!("read stream: {e}"))?;
+            if read == 0 { break; }
+            let Some(payload) = line.trim().strip_prefix("data:") else { continue; };
+            let payload = payload.trim();
+            if payload == "[DONE]" { break; }
+            let Ok(value) = serde_json::from_str::<Value>(payload) else { continue; };
+            // With --reasoning-format deepseek, thought text has its own field.
+            // Never forward it as a user-visible delta.
+            let Some(delta) = value.pointer("/choices/0/delta/content").and_then(Value::as_str) else { continue; };
+            let visible = public_text(delta);
+            if !visible.is_empty() {
+                output.push_str(&visible);
+                on_delta(&visible);
+            }
+        }
+        if cancelled.load(Ordering::Relaxed) {
+            return Err("stream cancelled by user".into());
+        }
+        if output.trim().is_empty() {
+            return Err("Le modèle n'a produit aucune réponse publique dans le flux.".into());
+        }
+        Ok(output)
     }
 }
 
