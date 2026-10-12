@@ -64,11 +64,13 @@ par configuration explicite, test de compatibilité et trace du backend. Aucun
 | [PalmClaw](https://github.com/ModalityDance/PalmClaw) | Framework Android natif avec sessions, mémoire, outils et boucle agent, mais inférence fournie par API configurée. Licence AGPL/commerciale. | Séparation UI / sessions / outils / boucle et tests Android. | **Référence seulement** : aucune dépendance AGPL et aucun secret de fournisseur dans le noyau. |
 | [ClosePaw](https://github.com/imoonkey/closepaw) | Outils par plateformes (accessibilité/virtual display), traces locales, pause/takeover et opt-in distinct pour Shizuku/Termux. | Écran de supervision, journal d’action, confirmation par application et opt-ins séparés. | **A7 seulement** : les actions réelles restent désactivées tant qu’il n’existe pas de capacité, post-condition et annulation fiable. |
 | [Jandal AI](https://github.com/NickMonrad/kernel-ai-assistant) | Modèle Brain–Memory–Action : LiteRT-LM, Room et rappel vectoriel ; licence Apache-2.0, checklist d’attribution et de test. | Schéma de stockage, route rapide déterministe et inventaire de licences. | **Comparer A4/A8** : ne pas copier le runtime ; mesurer d’abord llama.cpp CPU et LiteRT-LM à budget égal. |
+| [Brownie](https://github.com/natanloterio/Brownie) | Modules Compose séparés (`agent`, `inference`, `tools`, `memory`) ; LiteRT-LM, outils, mémoire, FTS, streaming et modèles dimensionnés par RAM. Licence MIT. | Découpage modulaire, import de modèle avec empreinte, streaming et limites RAM par profil. | **A3/A4/A8 à comparer** : les outils système restent des capacités unitaires et non un accès global donné au modèle. |
+| [Chevere AI](https://github.com/inehemiasm/AiAssistant) | Kotlin/Compose, LiteRT-LM, Room, WorkManager ; téléchargement atomique avec hash, déchargement mémoire en arrière-plan et écran de benchmark. | Cycle de vie des modèles, téléchargement vérifié, budget de RAM et métriques TTFT/tokens/s. | **A3/A6 à comparer** : capteurs, contacts, Web et génération d’image restent hors noyau et opt-in. |
+| [ZorvAI](https://github.com/Quor-a/ZorvAI) | Application Kotlin/Compose déclarant multi-modèle, mémoire, personnalité, voix et tâches planifiées. | Séparer identité, mémoire, voix et calendrier dans l’UI. | **Référence UX** : état d’implémentation, licences et permissions détaillées restent à auditer avant réemploi. |
 
-Les autres URL Android du catalogue — Brownie, AiAssistant, ZorvAI et projets
-similaires — restent `reference_only` jusqu’à lecture de leur licence,
-permissions, architecture et tests. Elles ne sont pas utilisées pour justifier
-une fonction de l’APK.
+Les URL Android non lues en profondeur restent `reference_only` jusqu’à audit
+de licence, permissions, architecture et tests. Elles ne justifient aucune
+fonction de l’APK.
 
 ## Contrats communs à créer avant JNI
 
@@ -138,6 +140,9 @@ annuler, recréer l’activité et visualiser un résultat final cohérent.
   exactement compatibles.
 - [ ] Diffuser tokens, TTFT et erreur de chargement ; couper le contexte avant
   l’OOM et expliquer le repli à l’utilisateur.
+- [ ] Reprendre les critères Brownie/Chevere : profil de RAM explicite,
+  téléchargement atomique, hash du modèle, et déchargement contrôlé lorsque
+  l’application passe durablement en arrière-plan.
 
 **Acceptation :** un GGUF choisi par l’utilisateur répond hors réseau ; les
 tests couvrent fichier refusé, espace insuffisant, modèle invalide, annulation
@@ -188,6 +193,8 @@ visibles dans la trace.
   boucle de retry et aucun chiffre HTP attribué à OpenCL/CPU.
 - [ ] Comparer CPU, OpenCL et HTP avec modèle, quantisation, contexte et
   température identiques.
+- [ ] Mettre l’écran de benchmark au même niveau de rigueur que Chevere :
+  warm-up séparé, TTFT, préfill, decode, RAM, backend et artefacts bruts.
 
 **Acceptation :** rapport reproductible contenant commandes, logs, PID/backend,
 mesures brutes et échecs. Sans cela, backend conservé sous `experimental`.
