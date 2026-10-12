@@ -1,5 +1,10 @@
 # TODO
 
+> **État courant audité :** voir
+> [`docs/TODO_AUDIT_2026-10-12.md`](docs/TODO_AUDIT_2026-10-12.md). Il fait
+> autorité pour les priorités, bugs, angles morts et critères de clôture ; la
+> liste historique ci-dessous reste la feuille de route de recherche.
+
 ## M0 — socle sûr
 
 - [ ] Importer les modules validés du harnais vivant : état durable, trajectoire,
