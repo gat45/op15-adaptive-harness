@@ -1,5 +1,7 @@
 # TODO
 
+> Feuille de route APK : voir [ANDROID_HARNESS_ROADMAP.md](docs/ANDROID_HARNESS_ROADMAP.md).
+
 > **État courant audité :** voir
 > [`docs/TODO_AUDIT_2026-10-12.md`](docs/TODO_AUDIT_2026-10-12.md). Il fait
 > autorité pour les priorités, bugs, angles morts et critères de clôture ; la
