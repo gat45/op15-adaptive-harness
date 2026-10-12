@@ -1,5 +1,5 @@
 use op15_adaptive_harness::{
-    Budget, BudgetUse, LlamaCppClient, Task,
+    Budget, BudgetUse, LlamaCppClient, PersonaProfile, Task,
     interaction::assess,
     loop_runner::TaskLoop,
     memory_store::{MemoryKind, MemoryStore, Verification},
@@ -90,6 +90,8 @@ struct ProfilerStatus {
     gpu_utilization_percent: Option<String>,
     gpu_vram_used_mb: Option<String>,
     gpu_vram_total_mb: Option<String>,
+    llama_server_pid: Option<u32>,
+    llama_server_vram_mb: Option<String>,
 }
 #[derive(Serialize)]
 struct OracleReport {
@@ -309,6 +311,30 @@ fn nvidia_smi() -> (
         Some(parts[3].to_owned()),
     )
 }
+fn listening_pid(port: u16) -> Option<u32> {
+    let output = Command::new("netstat").args(["-ano", "-p", "tcp"]).output().ok()?;
+    String::from_utf8_lossy(&output.stdout).lines().find_map(|line| {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        let local = fields.get(1)?;
+        let state = fields.get(3)?;
+        let pid = fields.get(4)?;
+        (local.ends_with(&format!(":{port}")) && state.eq_ignore_ascii_case("LISTENING"))
+            .then(|| pid.parse().ok())
+            .flatten()
+    })
+}
+fn nvidia_vram_for_pid(pid: u32) -> Option<String> {
+    let output = Command::new("nvidia-smi")
+        .args(["--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    output.status.success().then_some(())?;
+    String::from_utf8_lossy(&output.stdout).lines().find_map(|line| {
+        let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
+        (fields.len() == 2 && fields[0].parse::<u32>().ok() == Some(pid))
+            .then(|| fields[1].to_owned())
+    })
+}
 #[tauri::command]
 fn profiler_status(port: Option<u16>) -> ProfilerStatus {
     let port = port.unwrap_or(8080);
@@ -330,6 +356,8 @@ fn profiler_status(port: Option<u16>) -> ProfilerStatus {
             ),
         };
     let (gpu_name, gpu_utilization_percent, gpu_vram_used_mb, gpu_vram_total_mb) = nvidia_smi();
+    let llama_server_pid = listening_pid(port);
+    let llama_server_vram_mb = llama_server_pid.and_then(nvidia_vram_for_pid);
     ProfilerStatus {
         metrics_available,
         metrics_message,
@@ -337,6 +365,8 @@ fn profiler_status(port: Option<u16>) -> ProfilerStatus {
         gpu_utilization_percent,
         gpu_vram_used_mb,
         gpu_vram_total_mb,
+        llama_server_pid,
+        llama_server_vram_mb,
     }
 }
 fn safe_relative_path(relative_path: &str) -> Result<PathBuf, String> {
@@ -503,6 +533,58 @@ fn search_web(query: String) -> Result<(), String> {
         url_encode(query)
     ))
 }
+fn public_https_url(url: &str) -> Result<&str, String> {
+    let url = url.trim();
+    if !url.starts_with("https://") {
+        return Err("L’oracle web n’accepte que les sources HTTPS publiques explicites.".into());
+    }
+    let host = url[8..].split(['/', '?', '#']).next().unwrap_or("").to_lowercase();
+    let blocked = host == "localhost"
+        || host.starts_with("localhost:")
+        || host.starts_with("127.")
+        || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || host.starts_with("[::1]")
+        || host.ends_with(".local");
+    if host.is_empty() || blocked {
+        return Err("La source doit être un hôte HTTPS public, jamais localhost ou un réseau privé.".into());
+    }
+    Ok(url)
+}
+fn normalized_text(value: &str) -> String {
+    value.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+}
+#[tauri::command]
+fn verify_web_claim(url: String, claim: String) -> OracleReport {
+    let claim = claim.trim();
+    let url = match public_https_url(&url) {
+        Ok(url) => url,
+        Err(summary) => return OracleReport { kind: "source web".into(), status: "refusé".into(), independently_verified: false, artifact: String::new(), summary },
+    };
+    if claim.len() < 8 || claim.len() > 800 {
+        return OracleReport { kind: "source web".into(), status: "refusé".into(), independently_verified: false, artifact: String::new(), summary: "Saisis une affirmation précise de 8 à 800 caractères, pas une réponse entière.".into() };
+    }
+    let output = match Command::new("curl.exe")
+        .args(["--fail", "--silent", "--show-error", "--max-time", "15", "--max-filesize", "1048576", "--proto", "=https", "--user-agent", "Adaptive-Harness/0.1 source-check", url])
+        .output() {
+            Ok(output) if output.status.success() => output,
+            Ok(output) => return OracleReport { kind: "source web".into(), status: "source inaccessible".into(), independently_verified: false, artifact: url.into(), summary: format!("La source HTTPS n’a pas pu être lue : {}", String::from_utf8_lossy(&output.stderr).trim()) },
+            Err(error) => return OracleReport { kind: "source web".into(), status: "outil indisponible".into(), independently_verified: false, artifact: url.into(), summary: format!("curl.exe n’est pas disponible : {error}") },
+        };
+    let body = String::from_utf8_lossy(&output.stdout);
+    let matched = normalized_text(&body).contains(&normalized_text(claim));
+    OracleReport {
+        kind: "concordance source web".into(),
+        status: if matched { "confirmé dans la source (portée textuelle)".into() } else { "non trouvé dans la source".into() },
+        independently_verified: matched,
+        artifact: url.into(),
+        summary: if matched {
+            "L’affirmation exacte apparaît dans la ressource téléchargée. Cela établit une concordance textuelle avec cette source, pas la vérité générale ni l’interprétation complète du contenu.".into()
+        } else {
+            "L’affirmation exacte n’apparaît pas dans le contenu téléchargé. Reformule-la plus précisément ou examine une autre source ; ne conclus pas que l’affirmation est fausse.".into()
+        },
+    }
+}
 #[tauri::command]
 fn verify_calculation(expression: String, response: String) -> OracleReport {
     let expression = expression.trim();
@@ -614,6 +696,35 @@ fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("dossier de configuration: {e}"))?;
     fs::create_dir_all(&dir).map_err(|e| format!("création de configuration: {e}"))?;
     Ok(dir.join("desktop-config.json"))
+}
+fn persona_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("dossier d'identité: {e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("création identité: {e}"))?;
+    Ok(dir.join("persona.json"))
+}
+#[tauri::command]
+fn load_persona(app: tauri::AppHandle) -> PersonaProfile {
+    let Ok(path) = persona_path(&app) else {
+        return PersonaProfile::default();
+    };
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<PersonaProfile>(&text).ok())
+        .unwrap_or_default()
+        .normalized()
+}
+#[tauri::command]
+fn save_persona(app: tauri::AppHandle, persona: PersonaProfile) -> Result<PersonaProfile, String> {
+    let persona = persona.normalized();
+    let path = persona_path(&app)?;
+    let temp = path.with_extension("tmp");
+    let content = serde_json::to_string_pretty(&persona).map_err(|e| format!("sérialisation identité: {e}"))?;
+    fs::write(&temp, content).map_err(|e| format!("écriture identité: {e}"))?;
+    fs::rename(temp, path).map_err(|e| format!("finalisation identité: {e}"))?;
+    Ok(persona)
 }
 fn bounded_context(value: &str, limit: usize, label: &str) -> String {
     let count = value.chars().count();
@@ -756,6 +867,7 @@ fn run_task_blocking(
     prompt: String,
     model: String,
     port: u16,
+    persona: PersonaProfile,
     long_term_context: String,
     recent_context: String,
 ) -> Result<TaskResult, String> {
@@ -771,7 +883,7 @@ fn run_task_blocking(
         .map(|assignment| format!("{} : {}", assignment.specialist.label(), assignment.justification))
         .collect::<Vec<_>>()
         .join(" · ");
-    let mut context_sections = Vec::new();
+    let mut context_sections = vec![persona.prompt_context()];
     if !recent_context.trim().is_empty() {
         context_sections.push(format!(
             "Historique récent (contexte de dialogue, non vérifié) :\n{recent_context}"
@@ -882,6 +994,7 @@ async fn run_task(
     model: String,
     port: u16,
 ) -> Result<TaskResult, String> {
+    let persona = load_persona(app.clone());
     let long_term_context = long_term_memory_store(&app)?
         .retrieve(&prompt, 5)?
         .into_iter()
@@ -894,7 +1007,7 @@ async fn run_task(
         .collect::<Vec<_>>()
         .join("\n");
     tauri::async_runtime::spawn_blocking(move || {
-        run_task_blocking(prompt, model, port, long_term_context, recent_context)
+        run_task_blocking(prompt, model, port, persona, long_term_context, recent_context)
     })
     .await
     .map_err(|e| format!("worker du harnais: {e}"))?
@@ -1025,6 +1138,7 @@ pub fn run() {
             open_workspace_folder,
             open_browser_url,
             search_web,
+            verify_web_claim,
             verify_calculation,
             run_project_tests,
             memory_index_project,
@@ -1032,6 +1146,8 @@ pub fn run() {
             add_long_term_memory,
             record_reviewed_source,
             forget_long_term_memory,
+            load_persona,
+            save_persona,
             load_desktop_config,
             save_desktop_config,
             list_gguf,

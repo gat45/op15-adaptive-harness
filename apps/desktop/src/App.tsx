@@ -49,6 +49,8 @@ type ProfilerStatus = {
   gpu_utilization_percent: string | null;
   gpu_vram_used_mb: string | null;
   gpu_vram_total_mb: string | null;
+  llama_server_pid: number | null;
+  llama_server_vram_mb: string | null;
 };
 type OracleReport = {
   kind: string;
@@ -94,6 +96,13 @@ type LongTermMemory = {
   verification: string;
   observed_at_ms: number;
   content: string;
+};
+type PersonaProfile = {
+  name: string;
+  language: string;
+  tone: string;
+  principles: string[];
+  boundaries: string[];
 };
 const pages = [
   "Chat",
@@ -563,6 +572,50 @@ function Settings({
   );
 }
 
+function PersonaSettings({
+  persona,
+  setPersona,
+}: {
+  persona: PersonaProfile | null;
+  setPersona: (value: PersonaProfile) => void;
+}) {
+  const [message, setMessage] = useState("");
+  if (!persona) return <Notice>Chargement de l’identité conversationnelle…</Notice>;
+  const update = (key: keyof PersonaProfile, value: string) => {
+    if (key === "principles" || key === "boundaries") {
+      setPersona({ ...persona, [key]: value.split("\n").map((item) => item.trim()).filter(Boolean) });
+    } else {
+      setPersona({ ...persona, [key]: value });
+    }
+  };
+  const save = async () => {
+    try {
+      const saved = await invoke<PersonaProfile>("save_persona", { persona });
+      setPersona(saved);
+      setMessage("Identité enregistrée. Elle guidera les prochains tours sans remplacer les souvenirs ni les preuves.");
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  return (
+    <article>
+      <p className="role">IDENTITÉ CONVERSATIONNELLE</p>
+      <Notice>
+        Cette identité fixe le style et les limites de Jarvix. Elle ne prouve ni conscience ni mémoire de faits : les souvenirs et leurs sources restent séparés dans l’onglet Mémoire.
+      </Notice>
+      <div className="settings-grid">
+        <label>Nom<input value={persona.name} onChange={(event) => update("name", event.target.value)} /></label>
+        <label>Langue<input value={persona.language} onChange={(event) => update("language", event.target.value)} /></label>
+      </div>
+      <label>Ton<input value={persona.tone} onChange={(event) => update("tone", event.target.value)} /></label>
+      <label>Principes — un par ligne<textarea value={persona.principles.join("\n")} onChange={(event) => update("principles", event.target.value)} /></label>
+      <label>Limites — une par ligne<textarea value={persona.boundaries.join("\n")} onChange={(event) => update("boundaries", event.target.value)} /></label>
+      <button className="primary" onClick={save}>Enregistrer l’identité</button>
+      {message && <Notice kind="ok">{message}</Notice>}
+    </article>
+  );
+}
+
 function Profiler({
   port,
   elapsedMs,
@@ -600,13 +653,18 @@ function Profiler({
         <dd>{status?.gpu_name ?? "nvidia-smi indisponible"}</dd>
         <dt>GPU / VRAM globale</dt>
         <dd>{gpu}</dd>
+        <dt>llama.cpp sur ce port</dt>
+        <dd>
+          {status?.llama_server_pid != null
+            ? `PID ${status.llama_server_pid} · ${status.llama_server_vram_mb != null ? `${status.llama_server_vram_mb} Mo VRAM de calcul` : "VRAM non remontée par nvidia-smi"}`
+            : "processus non identifié sur ce port"}
+        </dd>
       </dl>
       <div className="actions">
         <button onClick={refresh}>Actualiser</button>
       </div>
       <p className="rule">
-        La télémétrie GPU est celle de la machine entière. Elle ne prouve pas, à
-        elle seule, l’usage du modèle. Le profil GTX 1080 lance llama.cpp avec{" "}
+        La ligne globale concerne toute la machine. La ligne llama.cpp relie le port sélectionné à son PID puis interroge nvidia-smi ; elle reste vide si le pilote ne publie pas l’usage par processus. Le profil GTX 1080 lance llama.cpp avec{" "}
         <code>--metrics</code> sur le port 18181.
       </p>
     </article>
@@ -618,6 +676,8 @@ function VerificationLab({ answer, suggestedQuery }: { answer: string; suggested
   const [testRoot, setTestRoot] = useState("D:\\op15-adaptive-harness");
   const [query, setQuery] = useState(suggestedQuery);
   const [sourceUrl, setSourceUrl] = useState("https://");
+  const [webClaim, setWebClaim] = useState("");
+  const [webOracle, setWebOracle] = useState<OracleReport | null>(null);
   const [sourceStatement, setSourceStatement] = useState("");
   const [oracle, setOracle] = useState<OracleReport | null>(null);
   const [test, setTest] = useState<ProjectTestReport | null>(null);
@@ -663,6 +723,13 @@ function VerificationLab({ answer, suggestedQuery }: { answer: string; suggested
       setMessage(String(error));
     }
   };
+  const verifyWeb = async () => {
+    try {
+      setWebOracle(await invoke<OracleReport>("verify_web_claim", { url: sourceUrl, claim: webClaim }));
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
   return (
     <article>
       <p className="role">LABORATOIRE DE VÉRIFICATION</p>
@@ -701,6 +768,12 @@ function VerificationLab({ answer, suggestedQuery }: { answer: string; suggested
           <input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} />
         </label>
         <div className="actions"><button disabled={sourceUrl === "https://"} onClick={openSource}>Ouvrir et examiner la source</button></div>
+        <label>
+          Affirmation courte à contrôler dans cette source
+          <textarea value={webClaim} placeholder="Ex. La documentation active les métriques avec l’option --metrics." onChange={(event) => setWebClaim(event.target.value)} />
+        </label>
+        <button disabled={sourceUrl === "https://" || webClaim.trim().length < 8} onClick={verifyWeb}>Contrôler la concordance HTTPS</button>
+        {webOracle && <div className={webOracle.independently_verified ? "notice ok" : "notice"}><strong>{webOracle.status}</strong><br />{webOracle.summary}<br /><small>{webOracle.artifact}</small></div>}
         <label>
           Portée réellement vérifiée dans cette source
           <textarea value={sourceStatement} placeholder="Ex. La documentation indique X, section Y ; elle ne démontre pas Z." onChange={(event) => setSourceStatement(event.target.value)} />
@@ -905,6 +978,7 @@ function WorkspaceTools() {
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null),
     [config, setConfig] = useState<Config>(blank),
+    [persona, setPersona] = useState<PersonaProfile | null>(null),
     [page, setPage] = useState<Page>("Chat"),
     [prompt, setPrompt] = useState(""),
     [turns, setTurns] = useState<Turn[]>([]),
@@ -920,6 +994,9 @@ export default function App() {
     invoke<Config>("load_desktop_config")
       .then(setConfig)
       .catch(() => setConfig(blank));
+    invoke<PersonaProfile>("load_persona")
+      .then(setPersona)
+      .catch(() => setPersona(null));
     try {
       const saved = localStorage.getItem(memoryKey);
       if (saved) setTurns(JSON.parse(saved));
@@ -1106,7 +1183,7 @@ export default function App() {
   if (page === "Profiler") content = profiler;
   if (page === "Benchmarks") content = bench;
   if (page === "Parametres")
-    content = <Settings config={config} setConfig={setConfig} />;
+    content = <><Settings config={config} setConfig={setConfig} /><PersonaSettings persona={persona} setPersona={setPersona} /></>;
   return (
     <main>
       <aside>
@@ -1148,6 +1225,8 @@ export default function App() {
           <dd>{status?.llama_reachable ? "accessible" : "indisponible"}</dd>
           <dt>Mémoire chat</dt>
           <dd>{turns.length} tour(s)</dd>
+          <dt>Identité</dt>
+          <dd>{persona?.name ?? "chargement"}</dd>
         </dl>
         <button onClick={refresh}>Actualiser</button>
       </aside>
@@ -1164,6 +1243,9 @@ export default function App() {
         {footerProfiler?.gpu_name
           ? ` · ${footerProfiler.gpu_name} : ${footerProfiler.gpu_utilization_percent ?? "?"}% · VRAM ${footerProfiler.gpu_vram_used_mb ?? "?"}/${footerProfiler.gpu_vram_total_mb ?? "?"} Mo (machine)`
           : " · GPU/VRAM : nvidia-smi indisponible"}
+        {footerProfiler?.llama_server_pid != null
+          ? ` · llama PID ${footerProfiler.llama_server_pid}${footerProfiler.llama_server_vram_mb != null ? ` : ${footerProfiler.llama_server_vram_mb} Mo` : ""}`
+          : ""}
       </footer>
     </main>
   );
