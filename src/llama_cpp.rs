@@ -144,11 +144,24 @@ fn read_limited(reader: &mut impl Read) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| "llama.cpp response is not valid UTF-8".into())
 }
 fn escape(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{08}' => escaped.push_str("\\b"),
+            '\u{0C}' => escaped.push_str("\\f"),
+            control if control.is_control() => {
+                use std::fmt::Write;
+                let _ = write!(escaped, "\\u{:04X}", control as u32);
+            }
+            other => escaped.push(other),
+        }
+    }
+    escaped
 }
 fn json_string_after(input: &str, key: &str) -> Option<String> {
     let rest = input.split_once(key)?.1.trim_start();
@@ -228,5 +241,9 @@ mod tests {
         let binding = vec![b'x'; (MAX_HTTP_RESPONSE_BYTES + 1) as usize];
         let mut bytes = binding.as_slice();
         assert!(read_limited(&mut bytes).is_err());
+    }
+    #[test]
+    fn escapes_tabs_and_all_json_control_characters() {
+        assert_eq!(escape("a\tb\u{0001}\n"), "a\\tb\\u0001\\n");
     }
 }
