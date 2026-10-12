@@ -52,6 +52,24 @@ par configuration explicite, test de compatibilité et trace du backend. Aucun
   d’inférence Android, GPU/NPU et outils. Il ne remplace pas llama.cpp tant
   qu’un même modèle, une même tâche et un même budget n’ont pas été mesurés.
 
+## Croisement avec les harnais Android étudiés
+
+| Projet | Fait confirmé dans la source primaire | Ce que OP15 peut reprendre | Décision / garde-fou |
+| --- | --- | --- | --- |
+| [AOHP](https://github.com/aohp-os/aohp) | Prototype AOSP, interfaces d’agent et suivi de flux d’information ; le dépôt avertit qu’il n’est pas prêt pour la production ou les usages critiques. | Modèle de capacité, traçabilité de flux et tests à checkpoints. | **Référence architecture seulement** : OP15 reste une APK, pas un fork AOSP. |
+| [Open Jarvis](https://github.com/tokenarc/open-jarvis) | Boucle : mémoire → routeur → plan atomique → action → vérification écran → stockage. Utilise accessibilité, vision, voix et MCP. | Contrat d’action atomique et post-condition observable. | **A5/A7 expérimental** : pas de service d’accessibilité avant permissions, pause, takeover et tests de risques. |
+| [Droid Harness](https://github.com/eibragaa/droid-harness) | App compagnon pour health check et pont local `127.0.0.1`; dépend largement de Termux/serveur séparé. | Écran diagnostic local et protocole de health check. | **Comparer, ne pas adopter** : Termux est un environnement externe ; aucun service local n’est exposé au réseau par défaut. |
+| [ADK Kotlin](https://github.com/google/adk-kotlin) | Modules LiteRT-LM on-device et outils ; la documentation qualifie des fonctions de pré-GA. | Contrat Kotlin de modèle interchangeable et exemples Compose. | **Expérience secondaire après A3** : ne pas faire dépendre le noyau Rust d’un SDK pré-GA. |
+| [Jenny](https://github.com/flagdizero/jenny-android-ai-agent) | Agent local-first, mémoire et tâches planifiées ; son README décrit aussi le coût d’un service persistant, les permissions et les limites d’un exécuteur Python non sandboxé. Licence AGPL-3.0. | Transparence des limites, export/suppression, tâches explicitement planifiées, modèle de menaces. | **Ne pas importer** : AGPL et runtime Python écartent une dépendance directe ; pas d’agent permanent promis. |
+| [PalmClaw](https://github.com/ModalityDance/PalmClaw) | Framework Android natif avec sessions, mémoire, outils et boucle agent, mais inférence fournie par API configurée. Licence AGPL/commerciale. | Séparation UI / sessions / outils / boucle et tests Android. | **Référence seulement** : aucune dépendance AGPL et aucun secret de fournisseur dans le noyau. |
+| [ClosePaw](https://github.com/imoonkey/closepaw) | Outils par plateformes (accessibilité/virtual display), traces locales, pause/takeover et opt-in distinct pour Shizuku/Termux. | Écran de supervision, journal d’action, confirmation par application et opt-ins séparés. | **A7 seulement** : les actions réelles restent désactivées tant qu’il n’existe pas de capacité, post-condition et annulation fiable. |
+| [Jandal AI](https://github.com/NickMonrad/kernel-ai-assistant) | Modèle Brain–Memory–Action : LiteRT-LM, Room et rappel vectoriel ; licence Apache-2.0, checklist d’attribution et de test. | Schéma de stockage, route rapide déterministe et inventaire de licences. | **Comparer A4/A8** : ne pas copier le runtime ; mesurer d’abord llama.cpp CPU et LiteRT-LM à budget égal. |
+
+Les autres URL Android du catalogue — Brownie, AiAssistant, ZorvAI et projets
+similaires — restent `reference_only` jusqu’à lecture de leur licence,
+permissions, architecture et tests. Elles ne sont pas utilisées pour justifier
+une fonction de l’APK.
+
 ## Contrats communs à créer avant JNI
 
 Le noyau Rust doit produire du JSON/DTO versionné et sans chaîne de pensée
@@ -80,6 +98,8 @@ jamais convertie en `0` ou `N/A` positif.
   par défaut et toute commande root depuis une réponse LLM.
 - [ ] Écrire la politique données : stockage local, export, suppression, durée
   de conservation et séparation `fait/preference/hypothèse/preuve`.
+- [ ] Reprendre le modèle ClosePaw : pour toute capacité haut risque, afficher
+  le périmètre, permettre pause/takeover et journaliser le résultat réel.
 
 **Acceptation :** diagramme des composants, liste des capacités, aucune
 permission dangereuse ajoutée et revue manuelle documentée.
@@ -133,6 +153,8 @@ et reprise d’application.
 - [ ] Ajouter suppression, export et correction d’un souvenir dans l’UI.
 - [ ] Mettre la consolidation en `WorkManager` unique, sous contraintes batterie
   et enregistrement, jamais pendant une génération active.
+- [ ] Comparer le triptyque Brain–Memory–Action de Jandal avec le noyau Rust :
+  définir une voie déterministe rapide, sans masquer au modèle ses limites.
 
 **Acceptation :** redémarrage, migration, conflit de souvenir, suppression et
 export sont testés ; aucun contenu LLM n’est mémorisé sans politique d’admission.
@@ -147,6 +169,9 @@ export sont testés ; aucun contenu LLM n’est mémorisé sans politique d’ad
 - [ ] Brancher Jarvix/MCP **en lecture** avec timeout, budget et provenance.
 - [ ] Placer les écritures de mémoire et les actions fichiers derrière une
   confirmation Android et une permission à portée limitée.
+- [ ] Faire de chaque action un plan atomique vérifiable, comme les boucles
+  d’Open Jarvis/ClosePaw, avec pré-condition, post-condition et rollback ou
+  état `inconnu` après interruption.
 
 **Acceptation :** une réponse non vérifiée ne devient pas vérifiée sur simple
 texte ; outil indisponible, preuve contradictoire et refus utilisateur sont
@@ -174,6 +199,10 @@ mesures brutes et échecs. Sans cela, backend conservé sous `experimental`.
   ambigu.
 - [ ] Ajouter navigation fichiers uniquement via `Storage Access Framework` et
   navigation web via intent/Custom Tab, avec confirmation préalable.
+- [ ] Si un service d’accessibilité est envisagé, le fournir comme extension
+  désactivée par défaut : approche par application autorisée, Smart Capsule
+  visible, pause/takeover et traces locales effaçables. Ni Shizuku ni Termux ne
+  sont des prérequis de l’APK.
 - [ ] Évaluer STT/VAD/TTS après chat fiable ; permission micro, indicateur actif,
   interruption et suppression audio explicites.
 - [ ] Ajouter accessibilité, thème, erreurs compréhensibles et mode hors ligne.
