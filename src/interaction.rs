@@ -106,7 +106,9 @@ mod tests {
     #[test]
     fn desktop_context_keeps_the_current_message_as_the_signal() {
         assert_eq!(
-            current_message("Historique récent :\nUtilisateur : bonjour\n\nDemande actuelle : corrige ça"),
+            current_message(
+                "Historique récent :\nUtilisateur : bonjour\n\nDemande actuelle : corrige ça"
+            ),
             "corrige ça"
         );
     }

@@ -46,6 +46,19 @@ type ProfilerStatus = {
   gpu_vram_used_mb: string | null;
   gpu_vram_total_mb: string | null;
 };
+type OracleReport = {
+  kind: string;
+  status: string;
+  independently_verified: boolean;
+  artifact: string;
+  summary: string;
+};
+type ProjectTestReport = {
+  passed: boolean;
+  status: string;
+  summary: string;
+  output: string;
+};
 type FileEntry = {
   name: string;
   relative_path: string;
@@ -596,6 +609,105 @@ function Profiler({
   );
 }
 
+function VerificationLab({ answer, suggestedQuery }: { answer: string; suggestedQuery: string }) {
+  const [expression, setExpression] = useState("");
+  const [testRoot, setTestRoot] = useState("D:\\op15-adaptive-harness");
+  const [query, setQuery] = useState(suggestedQuery);
+  const [sourceUrl, setSourceUrl] = useState("https://");
+  const [sourceStatement, setSourceStatement] = useState("");
+  const [oracle, setOracle] = useState<OracleReport | null>(null);
+  const [test, setTest] = useState<ProjectTestReport | null>(null);
+  const [message, setMessage] = useState("");
+  const calculate = async () => {
+    try {
+      setOracle(await invoke<OracleReport>("verify_calculation", { expression, response: answer }));
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  const runTests = async () => {
+    if (!window.confirm("Exécuter cargo test dans ce projet ? Les tests peuvent compiler du code local, mais aucun fichier source ne sera modifié.")) return;
+    try {
+      setTest(await invoke<ProjectTestReport>("run_project_tests", { rootPath: testRoot }));
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  const search = async () => {
+    try {
+      await invoke("search_web", { query });
+      setMessage("Recherche ouverte dans le navigateur. Ajoute ensuite l’URL de la source consultée : elle restera une source à examiner, pas une preuve automatique.");
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  const openSource = async () => {
+    try {
+      await invoke("open_browser_url", { url: sourceUrl });
+      setMessage("Source ouverte. Vérifie l’auteur, la date, le passage pertinent et son lien réel avec la réponse avant de la retenir.");
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  const recordSource = async () => {
+    if (!window.confirm("Confirmer que tu as personnellement examiné cette source et que cette note décrit uniquement sa portée ?")) return;
+    try {
+      await invoke("record_reviewed_source", { url: sourceUrl, statement: sourceStatement });
+      setMessage("Source examinée enregistrée avec sa provenance. Elle sera proposée comme contexte aux prochains tours, sans devenir automatiquement une vérité générale.");
+      setSourceStatement("");
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  return (
+    <article>
+      <p className="role">LABORATOIRE DE VÉRIFICATION</p>
+      <Notice>
+        Une vérification a toujours une portée limitée. Un calcul peut confirmer un nombre ; un test peut confirmer un comportement reproductible ; une recherche apporte des sources à examiner. Aucun de ces contrôles ne rend automatiquement toute la réponse vraie.
+      </Notice>
+      <div className="grid">
+        <section>
+          <h2>Calcul indépendant</h2>
+          <label>
+            Expression à contrôler
+            <input value={expression} placeholder="(2 + 3) * 4" onChange={(event) => setExpression(event.target.value)} />
+          </label>
+          <button disabled={!answer || !expression.trim()} onClick={calculate}>Calculer et comparer à la réponse</button>
+          {oracle && <div className={oracle.independently_verified ? "notice ok" : "notice"}><strong>{oracle.status}</strong><br />{oracle.summary}<br /><small>{oracle.artifact}</small></div>}
+        </section>
+        <section>
+          <h2>Expérience locale</h2>
+          <label>
+            Projet Rust à tester
+            <input value={testRoot} onChange={(event) => setTestRoot(event.target.value)} />
+          </label>
+          <button onClick={runTests}>Exécuter les tests du projet</button>
+          {test && <div className={test.passed ? "notice ok" : "notice error"}><strong>{test.status}</strong><br />{test.summary}{test.output && <pre>{test.output}</pre>}</div>}
+        </section>
+      </div>
+      <section>
+        <h2>Recherche et sources</h2>
+        <label>
+          Recherche à ouvrir
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Question précise à documenter" />
+        </label>
+        <div className="actions"><button disabled={!query.trim()} onClick={search}>Rechercher sur le web</button></div>
+        <label>
+          URL d’une source consultée
+          <input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} />
+        </label>
+        <div className="actions"><button disabled={sourceUrl === "https://"} onClick={openSource}>Ouvrir et examiner la source</button></div>
+        <label>
+          Portée réellement vérifiée dans cette source
+          <textarea value={sourceStatement} placeholder="Ex. La documentation indique X, section Y ; elle ne démontre pas Z." onChange={(event) => setSourceStatement(event.target.value)} />
+        </label>
+        <button disabled={sourceUrl === "https://" || !sourceStatement.trim()} onClick={recordSource}>Conserver la source examinée</button>
+      </section>
+      {message && <Notice>{message}</Notice>}
+    </article>
+  );
+}
+
 function WorkspaceTools() {
   const [root, setRoot] = useState("D:\\op15-adaptive-harness");
   const [relativePath, setRelativePath] = useState("");
@@ -921,7 +1033,9 @@ export default function App() {
       </form>
     </>
   );
+  const lastUserMessage = [...turns].reverse().find((turn) => turn.role === "user")?.text ?? "";
   const agent = (
+    <>
     <article>
       <p className="role">CONTROLEUR</p>
       <dl className="metrics">
@@ -950,6 +1064,8 @@ export default function App() {
           : status?.verification_rule}
       </p>
     </article>
+    <VerificationLab answer={result?.observation ?? ""} suggestedQuery={lastUserMessage} />
+    </>
   );
   const profiler = (
     <Profiler

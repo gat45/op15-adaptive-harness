@@ -35,6 +35,9 @@ impl MemoryKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Verification {
     UserAsserted,
+    /// A human explicitly reviewed an external source in the verification UI.
+    /// This is durable provenance, not an automatic proof of every later claim.
+    SourceReviewed,
     ToolObserved,
     IndependentlyVerified,
     Inferred,
@@ -44,6 +47,7 @@ impl Verification {
     fn as_str(&self) -> &'static str {
         match self {
             Self::UserAsserted => "user_asserted",
+            Self::SourceReviewed => "source_reviewed",
             Self::ToolObserved => "tool_observed",
             Self::IndependentlyVerified => "independently_verified",
             Self::Inferred => "inferred",
@@ -53,6 +57,7 @@ impl Verification {
     fn parse(value: &str) -> Option<Self> {
         match value {
             "user_asserted" => Some(Self::UserAsserted),
+            "source_reviewed" => Some(Self::SourceReviewed),
             "tool_observed" => Some(Self::ToolObserved),
             "independently_verified" => Some(Self::IndependentlyVerified),
             "inferred" => Some(Self::Inferred),
@@ -287,6 +292,24 @@ mod tests {
             )
             .unwrap();
         assert_eq!(memory.verification, Verification::Inferred);
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn preserves_reviewed_source_provenance() {
+        let path = path("source-reviewed");
+        let store = MemoryStore::open(&path).unwrap();
+        store
+            .add(
+                MemoryKind::Semantic,
+                Verification::SourceReviewed,
+                "Source examinée par l’utilisateur : https://example.org\nPortée déclarée : test.",
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            store.list_active().unwrap()[0].verification,
+            Verification::SourceReviewed
+        );
         fs::remove_file(path).unwrap();
     }
 }

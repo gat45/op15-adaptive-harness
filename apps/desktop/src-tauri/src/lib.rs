@@ -5,7 +5,7 @@ use op15_adaptive_harness::{
     memory_store::{MemoryKind, MemoryStore, Verification},
     reasoning_router::route,
     specialists::{guidance as specialist_guidance, select as select_specialists},
-    verifier::{Verdict, VerificationRequest, Verifier},
+    verifier::{CalculatorVerifier, Verdict, VerificationRequest, Verifier},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -83,6 +83,21 @@ struct ProfilerStatus {
     gpu_utilization_percent: Option<String>,
     gpu_vram_used_mb: Option<String>,
     gpu_vram_total_mb: Option<String>,
+}
+#[derive(Serialize)]
+struct OracleReport {
+    kind: String,
+    status: String,
+    independently_verified: bool,
+    artifact: String,
+    summary: String,
+}
+#[derive(Serialize)]
+struct ProjectTestReport {
+    passed: bool,
+    status: String,
+    summary: String,
+    output: String,
 }
 #[derive(Serialize)]
 struct FileEntry {
@@ -481,6 +496,89 @@ fn search_web(query: String) -> Result<(), String> {
         url_encode(query)
     ))
 }
+#[tauri::command]
+fn verify_calculation(expression: String, response: String) -> OracleReport {
+    let expression = expression.trim();
+    if expression.is_empty() {
+        return OracleReport {
+            kind: "calculator".into(),
+            status: "refusé".into(),
+            independently_verified: false,
+            artifact: String::new(),
+            summary: "Saisis une expression arithmétique explicite avant de lancer le calculateur.".into(),
+        };
+    }
+    let request = VerificationRequest {
+        task_id: "desktop-calculation".into(),
+        claim: format!("résultat numérique de {expression}"),
+        response,
+        artifacts: Vec::new(),
+        criteria: vec!["numeric-answer".into()],
+    };
+    let verdict = CalculatorVerifier { expression: expression.into() }.verify(&request);
+    OracleReport {
+        kind: "calculateur indépendant".into(),
+        status: if verdict.supports(&request) { "vérifié (portée numérique)" } else { "non confirmé" }.into(),
+        independently_verified: verdict.supports(&request),
+        artifact: verdict.artifact,
+        summary: verdict.summary,
+    }
+}
+
+#[tauri::command]
+fn run_project_tests(root_path: String) -> Result<ProjectTestReport, String> {
+    let root = PathBuf::from(root_path.trim());
+    if !root.join("Cargo.toml").is_file() {
+        return Err("Choisis un projet Rust contenant un Cargo.toml à sa racine.".into());
+    }
+    let target = std::env::temp_dir().join(format!(
+        "adaptive-harness-test-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_millis()
+    ));
+    let mut child = Command::new("cargo")
+        .args(["test", "--quiet", "--target-dir"])
+        .arg(&target)
+        .current_dir(&root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("démarrage de cargo test: {e}"))?;
+    let deadline = Instant::now() + Duration::from_secs(120);
+    while child.try_wait().map_err(|e| format!("attente de cargo test: {e}"))?.is_none() {
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(ProjectTestReport {
+                passed: false,
+                status: "expérience interrompue".into(),
+                summary: "cargo test a dépassé la limite de 120 secondes et a été arrêté.".into(),
+                output: String::new(),
+            });
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let output = child.wait_with_output().map_err(|e| format!("lecture de cargo test: {e}"))?;
+    let joined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let max = 6_000;
+    let clipped = if joined.len() > max {
+        format!("…{}", &joined[joined.len() - max..])
+    } else {
+        joined
+    };
+    Ok(ProjectTestReport {
+        passed: output.status.success(),
+        status: if output.status.success() { "tests passés" } else { "tests en échec" }.into(),
+        summary: "Expérience locale exécutée. Elle atteste l’état des tests du projet, pas la vérité générale d’une réponse du modèle.".into(),
+        output: clipped,
+    })
+}
 fn escape_json(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -552,6 +650,30 @@ fn add_long_term_memory(
         parse_memory_kind(&kind)?,
         Verification::UserAsserted,
         &content,
+        None,
+    )?))
+}
+#[tauri::command]
+fn record_reviewed_source(
+    app: tauri::AppHandle,
+    url: String,
+    statement: String,
+) -> Result<LongTermMemoryView, String> {
+    let url = url.trim();
+    let statement = statement.trim();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("La source doit être une URL http(s).".into());
+    }
+    if statement.is_empty() {
+        return Err("Décris précisément quelle affirmation la source étaye ou contredit.".into());
+    }
+    if statement.len() > 4_000 {
+        return Err("La note de source dépasse 4 000 caractères.".into());
+    }
+    Ok(memory_view(long_term_memory_store(&app)?.add(
+        MemoryKind::Semantic,
+        Verification::SourceReviewed,
+        &format!("Source examinée par l’utilisateur : {url}\nPortée déclarée : {statement}"),
         None,
     )?))
 }
@@ -864,9 +986,12 @@ pub fn run() {
             open_workspace_folder,
             open_browser_url,
             search_web,
+            verify_calculation,
+            run_project_tests,
             memory_index_project,
             list_long_term_memory,
             add_long_term_memory,
+            record_reviewed_source,
             forget_long_term_memory,
             load_desktop_config,
             save_desktop_config,

@@ -26,7 +26,7 @@ pub fn public_answer_prompt(question: &str) -> String {
          {}\n\
          Ne transforme jamais une mémoire déclarée par l'utilisateur en fait vérifié. N'invente ni faits \n\
          ni souvenirs absents. N'affiche jamais de raisonnement interne, de balises <think> ou d'étapes \n\
-         cachées : donne seulement une réponse finale naturelle en français.\n\nDemande : {question}",
+         cachées : donne seulement une réponse finale naturelle en français. Si une donnée manquante change matériellement la réponse, formule l'incertitude, pose une question brève ou propose le plus petit test réversible qui permettrait de la lever. N'affirme jamais qu'un test, une source ou une recherche a été exécuté si le harnais ne l'a pas réellement signalé.\n\nDemande : {question}",
         assessment.mode.label(),
         if assessment.ask_clarification {
             "Le contexte ne suffit pas pour une référence importante : demande une précision brève avant toute action irréversible."
@@ -215,6 +215,13 @@ mod tests {
     fn removes_complete_or_partial_thinking() {
         assert_eq!(public_text("<think>hidden</think> Bonjour"), "Bonjour");
         assert_eq!(public_text("<think>hidden"), "");
+    }
+    #[test]
+    fn public_contract_requires_uncertainty_and_a_reversible_test() {
+        let prompt = public_answer_prompt("Pourquoi cela ne marche plus ?");
+        assert!(prompt.contains("pose une question brève"));
+        assert!(prompt.contains("test réversible"));
+        assert!(prompt.contains("N'affirme jamais qu'un test"));
     }
     #[test]
     fn rejects_oversized_response() {
