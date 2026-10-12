@@ -1,9 +1,12 @@
+use crate::{
+    interaction::assess,
+    reasoning_router::{guidance, route},
+};
 use std::{
     io::{Read, Write},
     net::{TcpStream, ToSocketAddrs},
     time::Duration,
 };
-use crate::{interaction::assess, reasoning_router::{guidance, route}};
 
 const MAX_HTTP_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -98,7 +101,12 @@ impl LlamaCppClient {
         stream
             .set_write_timeout(Some(Duration::from_secs(10)))
             .map_err(|e| format!("write timeout: {e}"))?;
-        let request = format!("POST /v1/chat/completions HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", self.host, body.len(), body);
+        let request = format!(
+            "POST /v1/chat/completions HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            self.host,
+            body.len(),
+            body
+        );
         stream
             .write_all(request.as_bytes())
             .map_err(|e| format!("write: {e}"))?;
@@ -111,7 +119,8 @@ impl LlamaCppClient {
             return Err(format!("llama.cpp returned: {payload}"));
         }
         Ok(Completion {
-            text: json_string_after(payload, "\"content\":").ok_or("chat completion content missing")?,
+            text: json_string_after(payload, "\"content\":")
+                .ok_or("chat completion content missing")?,
             total_tokens: json_number_after(payload, "\"total_tokens\":"),
         })
     }

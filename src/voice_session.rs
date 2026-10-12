@@ -1,5 +1,69 @@
-#[derive(Debug,Clone,PartialEq,Eq)] pub enum VoiceState { Idle, Listening, Transcribing, Thinking, Speaking, Interrupted }
-#[derive(Debug,Clone,Default,PartialEq,Eq)] pub struct VoiceMetrics { pub vad_ms:u64, pub stt_ms:u64, pub first_token_ms:u64, pub tts_first_audio_ms:u64, pub playback_ms:u64 }
-#[derive(Debug,Clone,PartialEq,Eq)] pub struct VoiceSession { pub state:VoiceState, pub turns:u64, pub metrics:VoiceMetrics }
-impl Default for VoiceSession { fn default()->Self{Self{state:VoiceState::Idle,turns:0,metrics:VoiceMetrics::default()}} }
-impl VoiceSession { pub fn speech_started(&mut self)->Result<(),&'static str>{match self.state{VoiceState::Idle|VoiceState::Speaking=>{self.state=VoiceState::Listening;Ok(())}_=>Err("invalid speech start")}} pub fn transcription_ready(&mut self)->Result<(),&'static str>{if self.state!=VoiceState::Listening{return Err("not listening")}self.state=VoiceState::Thinking;Ok(())} pub fn speech_output_started(&mut self)->Result<(),&'static str>{if self.state!=VoiceState::Thinking{return Err("not thinking")}self.state=VoiceState::Speaking;self.turns+=1;Ok(())} pub fn interrupt(&mut self)->bool{if self.state==VoiceState::Speaking{self.state=VoiceState::Interrupted;true}else{false}} pub fn finish(&mut self){self.state=VoiceState::Idle;} }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VoiceState {
+    Idle,
+    Listening,
+    Transcribing,
+    Thinking,
+    Speaking,
+    Interrupted,
+}
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct VoiceMetrics {
+    pub vad_ms: u64,
+    pub stt_ms: u64,
+    pub first_token_ms: u64,
+    pub tts_first_audio_ms: u64,
+    pub playback_ms: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceSession {
+    pub state: VoiceState,
+    pub turns: u64,
+    pub metrics: VoiceMetrics,
+}
+impl Default for VoiceSession {
+    fn default() -> Self {
+        Self {
+            state: VoiceState::Idle,
+            turns: 0,
+            metrics: VoiceMetrics::default(),
+        }
+    }
+}
+impl VoiceSession {
+    pub fn speech_started(&mut self) -> Result<(), &'static str> {
+        match self.state {
+            VoiceState::Idle | VoiceState::Speaking => {
+                self.state = VoiceState::Listening;
+                Ok(())
+            }
+            _ => Err("invalid speech start"),
+        }
+    }
+    pub fn transcription_ready(&mut self) -> Result<(), &'static str> {
+        if self.state != VoiceState::Listening {
+            return Err("not listening");
+        }
+        self.state = VoiceState::Thinking;
+        Ok(())
+    }
+    pub fn speech_output_started(&mut self) -> Result<(), &'static str> {
+        if self.state != VoiceState::Thinking {
+            return Err("not thinking");
+        }
+        self.state = VoiceState::Speaking;
+        self.turns += 1;
+        Ok(())
+    }
+    pub fn interrupt(&mut self) -> bool {
+        if self.state == VoiceState::Speaking {
+            self.state = VoiceState::Interrupted;
+            true
+        } else {
+            false
+        }
+    }
+    pub fn finish(&mut self) {
+        self.state = VoiceState::Idle;
+    }
+}

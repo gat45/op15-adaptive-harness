@@ -2,7 +2,7 @@ use crate::{
     budget::{Budget, BudgetUse},
     controller::{Controller, Decision, StopReason, Task},
     evidence::{Evidence, EvidenceSet},
-    llama_cpp::{public_answer_prompt, public_text, LlamaCppClient},
+    llama_cpp::{LlamaCppClient, public_answer_prompt, public_text},
     trace::{CausalTrace, TraceEvent},
     verifier::{VerificationRequest, Verifier},
 };
@@ -103,7 +103,7 @@ impl TaskLoop {
                         observation,
                         model_error,
                         trace,
-                    }
+                    };
                 }
             }
         }

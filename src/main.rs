@@ -1,2 +1,43 @@
-use op15_adaptive_harness::{loop_runner::TaskLoop, verifier::FileExistsVerifier, Budget, BudgetUse, LlamaCppClient, Task};
-fn main() { let model=std::env::var("LLAMA_CPP_MODEL").unwrap_or_else(|_|"F:\\tiers\\Nanbeige4.2-3B-Q8_0.gguf".into()); let args:Vec<String>=std::env::args().collect(); let claim=args.get(1).cloned().unwrap_or_else(||"Réponds en une phrase : observation récupérée".into()); let verify_path=args.get(2).cloned().unwrap_or_else(||"Cargo.toml".into()); let task=Task{id:"cli-task".into(),claim,tool_available:true,confidence_milli:700}; let result=TaskLoop::run(&task,Budget{wall_ms:2000,tokens:100,ram_mb:512,tool_calls:2},BudgetUse{wall_ms:500,tokens:24,ram_mb:32,tool_calls:1},&LlamaCppClient::local(model),&FileExistsVerifier{path:verify_path},2); println!("decision={:?} observation={:?} trace_events={}",result.decision,result.observation,result.trace.0.len()); }
+use op15_adaptive_harness::{
+    Budget, BudgetUse, LlamaCppClient, Task, loop_runner::TaskLoop, verifier::FileExistsVerifier,
+};
+fn main() {
+    let model = std::env::var("LLAMA_CPP_MODEL")
+        .unwrap_or_else(|_| "F:\\tiers\\Nanbeige4.2-3B-Q8_0.gguf".into());
+    let args: Vec<String> = std::env::args().collect();
+    let claim = args
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| "Réponds en une phrase : observation récupérée".into());
+    let verify_path = args.get(2).cloned().unwrap_or_else(|| "Cargo.toml".into());
+    let task = Task {
+        id: "cli-task".into(),
+        claim,
+        tool_available: true,
+        confidence_milli: 700,
+    };
+    let result = TaskLoop::run(
+        &task,
+        Budget {
+            wall_ms: 2000,
+            tokens: 100,
+            ram_mb: 512,
+            tool_calls: 2,
+        },
+        BudgetUse {
+            wall_ms: 500,
+            tokens: 24,
+            ram_mb: 32,
+            tool_calls: 1,
+        },
+        &LlamaCppClient::local(model),
+        &FileExistsVerifier { path: verify_path },
+        2,
+    );
+    println!(
+        "decision={:?} observation={:?} trace_events={}",
+        result.decision,
+        result.observation,
+        result.trace.0.len()
+    );
+}

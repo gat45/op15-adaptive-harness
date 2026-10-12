@@ -43,22 +43,36 @@ pub fn assess(prompt: &str) -> InteractionAssessment {
     let message = current_message(prompt);
     let normalized = message.to_lowercase();
     let has_history = prompt.contains("Historique récent:");
-    let looks_like_action = ["fais", "crée", "corrige", "cherche", "lance", "ouvre", "intègre"]
-        .iter()
-        .any(|verb| normalized.starts_with(verb));
+    let looks_like_action = [
+        "fais", "crée", "corrige", "cherche", "lance", "ouvre", "intègre",
+    ]
+    .iter()
+    .any(|verb| normalized.starts_with(verb));
     let deictic_only = ["ça", "cela", "ceci", "le même", "comme avant"]
         .iter()
         .any(|cue| normalized.contains(cue));
     let short_statement = normalized.split_whitespace().count() <= 6 && !normalized.contains('?');
 
     if deictic_only && !has_history {
-        InteractionAssessment { mode: InteractionMode::Ambiguous, ask_clarification: true }
+        InteractionAssessment {
+            mode: InteractionMode::Ambiguous,
+            ask_clarification: true,
+        }
     } else if looks_like_action {
-        InteractionAssessment { mode: InteractionMode::Action, ask_clarification: false }
+        InteractionAssessment {
+            mode: InteractionMode::Action,
+            ask_clarification: false,
+        }
     } else if short_statement {
-        InteractionAssessment { mode: InteractionMode::Relational, ask_clarification: false }
+        InteractionAssessment {
+            mode: InteractionMode::Relational,
+            ask_clarification: false,
+        }
     } else {
-        InteractionAssessment { mode: InteractionMode::Factual, ask_clarification: false }
+        InteractionAssessment {
+            mode: InteractionMode::Factual,
+            ask_clarification: false,
+        }
     }
 }
 
@@ -81,7 +95,9 @@ mod tests {
 
     #[test]
     fn history_resolves_a_deictic_follow_up() {
-        let assessment = assess("Historique récent:\nUtilisateur: génère un rapport\n\nNouvelle demande de l'utilisateur : fais ça");
+        let assessment = assess(
+            "Historique récent:\nUtilisateur: génère un rapport\n\nNouvelle demande de l'utilisateur : fais ça",
+        );
         assert_eq!(assessment.mode, InteractionMode::Action);
         assert!(!assessment.ask_clarification);
     }

@@ -1,3 +1,26 @@
 //! Minimal verifiable adaptive controller.
-pub mod action; pub mod adaptive_policy; pub mod budget; pub mod controller; pub mod evidence; pub mod goals; pub mod hardware; pub mod interaction; pub mod llama_cpp; pub mod loop_runner; pub mod memory_store; pub mod metacognition; pub mod permissions; pub mod policy_registry; pub mod reasoning_router; pub mod runner; pub mod self_model; pub mod state; pub mod trace; pub mod verifier; pub mod voice_session;
-pub use budget::{Budget, BudgetUse}; pub use controller::{Controller, Decision, StopReason, Task}; pub use evidence::{Evidence, EvidenceSet}; pub use llama_cpp::{Completion, LlamaCppClient};
+pub mod action;
+pub mod adaptive_policy;
+pub mod budget;
+pub mod controller;
+pub mod evidence;
+pub mod goals;
+pub mod hardware;
+pub mod interaction;
+pub mod llama_cpp;
+pub mod loop_runner;
+pub mod memory_store;
+pub mod metacognition;
+pub mod permissions;
+pub mod policy_registry;
+pub mod reasoning_router;
+pub mod runner;
+pub mod self_model;
+pub mod state;
+pub mod trace;
+pub mod verifier;
+pub mod voice_session;
+pub use budget::{Budget, BudgetUse};
+pub use controller::{Controller, Decision, StopReason, Task};
+pub use evidence::{Evidence, EvidenceSet};
+pub use llama_cpp::{Completion, LlamaCppClient};

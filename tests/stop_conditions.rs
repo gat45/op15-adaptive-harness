@@ -1,3 +1,48 @@
-use op15_adaptive_harness::{Budget, BudgetUse, Controller, Decision, EvidenceSet, StopReason, Task};
-#[test] fn stops_before_overspending() { let d = Controller::decide(&Task { id: "t".into(), claim: "claim".into(), tool_available: true, confidence_milli: 900 }, &EvidenceSet::default(), Budget { wall_ms: 1, tokens: 1, ram_mb: 1, tool_calls: 0 }, BudgetUse { wall_ms: 2, tokens: 2, ram_mb: 2, tool_calls: 1 }); assert_eq!(d, Decision::Stop(StopReason::BudgetExhausted)); }
-#[test] fn unavailable_tool_stops_instead_of_guessing() { let d = Controller::decide(&Task { id: "t".into(), claim: "claim".into(), tool_available: false, confidence_milli: 900 }, &EvidenceSet::default(), Budget { wall_ms: 10, tokens: 10, ram_mb: 10, tool_calls: 1 }, BudgetUse::default()); assert_eq!(d, Decision::Stop(StopReason::ToolUnavailable)); }
+use op15_adaptive_harness::{
+    Budget, BudgetUse, Controller, Decision, EvidenceSet, StopReason, Task,
+};
+#[test]
+fn stops_before_overspending() {
+    let d = Controller::decide(
+        &Task {
+            id: "t".into(),
+            claim: "claim".into(),
+            tool_available: true,
+            confidence_milli: 900,
+        },
+        &EvidenceSet::default(),
+        Budget {
+            wall_ms: 1,
+            tokens: 1,
+            ram_mb: 1,
+            tool_calls: 0,
+        },
+        BudgetUse {
+            wall_ms: 2,
+            tokens: 2,
+            ram_mb: 2,
+            tool_calls: 1,
+        },
+    );
+    assert_eq!(d, Decision::Stop(StopReason::BudgetExhausted));
+}
+#[test]
+fn unavailable_tool_stops_instead_of_guessing() {
+    let d = Controller::decide(
+        &Task {
+            id: "t".into(),
+            claim: "claim".into(),
+            tool_available: false,
+            confidence_milli: 900,
+        },
+        &EvidenceSet::default(),
+        Budget {
+            wall_ms: 10,
+            tokens: 10,
+            ram_mb: 10,
+            tool_calls: 1,
+        },
+        BudgetUse::default(),
+    );
+    assert_eq!(d, Decision::Stop(StopReason::ToolUnavailable));
+}

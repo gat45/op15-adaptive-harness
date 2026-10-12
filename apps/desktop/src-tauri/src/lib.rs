@@ -1,8 +1,9 @@
 use op15_adaptive_harness::{
+    Budget, BudgetUse, LlamaCppClient, Task,
     interaction::assess,
-    reasoning_router::route,
-    memory_store::{MemoryKind, MemoryStore, Verification}, Budget, BudgetUse, LlamaCppClient, Task,
     loop_runner::TaskLoop,
+    memory_store::{MemoryKind, MemoryStore, Verification},
+    reasoning_router::route,
     verifier::{Verdict, VerificationRequest, Verifier},
 };
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,7 @@ use tauri::Manager;
 
 const MEMORY_HOST: &str = "127.0.0.1";
 const MEMORY_PORT: u16 = 9749;
+const MAX_TOOL_FILE_BYTES: u64 = 1024 * 1024;
 
 struct UnverifiedVerifier;
 impl Verifier for UnverifiedVerifier {
@@ -76,7 +78,20 @@ struct ProfilerStatus {
     gpu_vram_total_mb: Option<String>,
 }
 #[derive(Serialize)]
-struct LongTermMemoryView { id: String, kind: String, verification: String, observed_at_ms: u128, content: String }
+struct FileEntry {
+    name: String,
+    relative_path: String,
+    is_directory: bool,
+    size_bytes: Option<u64>,
+}
+#[derive(Serialize)]
+struct LongTermMemoryView {
+    id: String,
+    kind: String,
+    verification: String,
+    observed_at_ms: u128,
+    content: String,
+}
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct DesktopConfig {
@@ -108,11 +123,21 @@ impl DesktopConfig {
         if self.port == 0 {
             self.port = 18_181;
         }
-        if self.threads == 0 { self.threads = 8; }
-        if self.parallel == 0 { self.parallel = 1; }
-        if self.batch_size == 0 { self.batch_size = 2_048; }
-        if self.ubatch_size == 0 { self.ubatch_size = 512; }
-        if self.cache_type.trim().is_empty() { self.cache_type = "q8_0".into(); }
+        if self.threads == 0 {
+            self.threads = 8;
+        }
+        if self.parallel == 0 {
+            self.parallel = 1;
+        }
+        if self.batch_size == 0 {
+            self.batch_size = 2_048;
+        }
+        if self.ubatch_size == 0 {
+            self.ubatch_size = 512;
+        }
+        if self.cache_type.trim().is_empty() {
+            self.cache_type = "q8_0".into();
+        }
         self
     }
 }
@@ -206,40 +231,248 @@ fn memory_status() -> MemoryStatus {
 fn start_memory_mcp(executable_path: String, port: Option<u16>) -> Result<String, String> {
     let executable = PathBuf::from(executable_path.trim());
     if !executable.is_file() {
-        return Err("L'exécutable Codebase Memory MCP est introuvable. Choisis son fichier .exe.".into());
+        return Err(
+            "L'exécutable Codebase Memory MCP est introuvable. Choisis son fichier .exe.".into(),
+        );
     }
     let port = port.unwrap_or(MEMORY_PORT);
     if tcp_reachable(MEMORY_HOST, port) {
-        return Ok(format!("Codebase Memory MCP est déjà accessible sur le port {port}."));
+        return Ok(format!(
+            "Codebase Memory MCP est déjà accessible sur le port {port}."
+        ));
     }
     Command::new(&executable)
         .args(["--ui=true", &format!("--port={port}")])
         .spawn()
         .map_err(|e| format!("démarrage MCP: {e}"))?;
-    Ok(format!("Démarrage de Codebase Memory MCP demandé sur le port {port}."))
+    Ok(format!(
+        "Démarrage de Codebase Memory MCP demandé sur le port {port}."
+    ))
 }
-fn nvidia_smi() -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+fn nvidia_smi() -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let Ok(output) = Command::new("nvidia-smi")
-        .args(["--query-gpu=name,utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"])
+        .args([
+            "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ])
         .output()
-    else { return (None, None, None, None); };
-    if !output.status.success() { return (None, None, None, None); }
+    else {
+        return (None, None, None, None);
+    };
+    if !output.status.success() {
+        return (None, None, None, None);
+    }
     let rendered = String::from_utf8_lossy(&output.stdout);
     let line = rendered.lines().next().unwrap_or("");
     let parts = line.split(',').map(str::trim).collect::<Vec<_>>();
-    if parts.len() != 4 { return (None, None, None, None); }
-    (Some(parts[0].to_owned()), Some(parts[1].to_owned()), Some(parts[2].to_owned()), Some(parts[3].to_owned()))
+    if parts.len() != 4 {
+        return (None, None, None, None);
+    }
+    (
+        Some(parts[0].to_owned()),
+        Some(parts[1].to_owned()),
+        Some(parts[2].to_owned()),
+        Some(parts[3].to_owned()),
+    )
 }
 #[tauri::command]
 fn profiler_status(port: Option<u16>) -> ProfilerStatus {
     let port = port.unwrap_or(8080);
-    let (metrics_available, metrics_message) = match http_request("GET", "127.0.0.1", port, "/metrics", None) {
-        Ok(_) => (true, format!("Métriques Prometheus accessibles sur le port {port}.")),
-        Err(error) if error.contains("501") || error.contains("Not Implemented") => (false, format!("Le serveur sur le port {port} ne fournit pas /metrics (HTTP 501).")),
-        Err(_) => (false, format!("Aucune métrique compatible n'est exposée par le serveur sur le port {port}.")),
-    };
+    let (metrics_available, metrics_message) =
+        match http_request("GET", "127.0.0.1", port, "/metrics", None) {
+            Ok(_) => (
+                true,
+                format!("Métriques Prometheus accessibles sur le port {port}."),
+            ),
+            Err(error) if error.contains("501") || error.contains("Not Implemented") => (
+                false,
+                format!("Le serveur sur le port {port} ne fournit pas /metrics (HTTP 501)."),
+            ),
+            Err(_) => (
+                false,
+                format!(
+                    "Aucune métrique compatible n'est exposée par le serveur sur le port {port}."
+                ),
+            ),
+        };
     let (gpu_name, gpu_utilization_percent, gpu_vram_used_mb, gpu_vram_total_mb) = nvidia_smi();
-    ProfilerStatus { metrics_available, metrics_message, gpu_name, gpu_utilization_percent, gpu_vram_used_mb, gpu_vram_total_mb }
+    ProfilerStatus {
+        metrics_available,
+        metrics_message,
+        gpu_name,
+        gpu_utilization_percent,
+        gpu_vram_used_mb,
+        gpu_vram_total_mb,
+    }
+}
+fn safe_relative_path(relative_path: &str) -> Result<PathBuf, String> {
+    let candidate = PathBuf::from(relative_path.trim());
+    if candidate.is_absolute()
+        || candidate.components().any(|part| {
+            matches!(
+                part,
+                std::path::Component::ParentDir
+                    | std::path::Component::Prefix(_)
+                    | std::path::Component::RootDir
+            )
+        })
+    {
+        return Err("Le chemin doit être relatif au dossier explicitement choisi.".into());
+    }
+    Ok(candidate)
+}
+fn selected_root(root_path: &str) -> Result<PathBuf, String> {
+    let root = PathBuf::from(root_path.trim());
+    if !root.is_dir() {
+        return Err("Le dossier choisi n'existe pas.".into());
+    }
+    root.canonicalize()
+        .map_err(|e| format!("dossier choisi: {e}"))
+}
+fn scoped_path(root_path: &str, relative_path: &str) -> Result<(PathBuf, PathBuf), String> {
+    let root = selected_root(root_path)?;
+    let target = root.join(safe_relative_path(relative_path)?);
+    let parent = target.parent().ok_or("chemin invalide")?;
+    if parent.exists() {
+        let canonical_parent = parent
+            .canonicalize()
+            .map_err(|e| format!("dossier cible: {e}"))?;
+        if !canonical_parent.starts_with(&root) {
+            return Err("La cible sort du dossier explicitement choisi.".into());
+        }
+    }
+    if target.exists() {
+        let canonical_target = target.canonicalize().map_err(|e| format!("cible: {e}"))?;
+        if !canonical_target.starts_with(&root) {
+            return Err("La cible résolue sort du dossier explicitement choisi.".into());
+        }
+    }
+    Ok((root, target))
+}
+#[tauri::command]
+fn list_workspace_files(
+    root_path: String,
+    relative_path: String,
+) -> Result<Vec<FileEntry>, String> {
+    let (root, target) = scoped_path(&root_path, &relative_path)?;
+    if !target.is_dir() {
+        return Err("Le chemin demandé n'est pas un dossier.".into());
+    }
+    let mut entries = fs::read_dir(&target)
+        .map_err(|e| format!("lecture dossier: {e}"))?
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            let path = entry.path();
+            let relative_path = path
+                .strip_prefix(&root)
+                .ok()?
+                .to_string_lossy()
+                .replace('\\', "/");
+            Some(FileEntry {
+                name: entry.file_name().to_string_lossy().to_string(),
+                relative_path,
+                is_directory: metadata.is_dir(),
+                size_bytes: metadata.is_file().then_some(metadata.len()),
+            })
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|a, b| {
+        b.is_directory
+            .cmp(&a.is_directory)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(entries)
+}
+#[tauri::command]
+fn read_workspace_file(root_path: String, relative_path: String) -> Result<String, String> {
+    let (_, target) = scoped_path(&root_path, &relative_path)?;
+    let metadata = fs::metadata(&target).map_err(|e| format!("fichier: {e}"))?;
+    if !metadata.is_file() {
+        return Err("La cible n'est pas un fichier.".into());
+    }
+    if metadata.len() > MAX_TOOL_FILE_BYTES {
+        return Err("Le fichier dépasse la limite de lecture de 1 Mo.".into());
+    }
+    fs::read_to_string(&target).map_err(|e| format!("lecture fichier: {e}"))
+}
+#[tauri::command]
+fn write_workspace_file(
+    root_path: String,
+    relative_path: String,
+    content: String,
+) -> Result<String, String> {
+    if content.len() as u64 > MAX_TOOL_FILE_BYTES {
+        return Err("Le contenu dépasse la limite d'écriture de 1 Mo.".into());
+    }
+    let (_, target) = scoped_path(&root_path, &relative_path)?;
+    let parent = target.parent().ok_or("chemin invalide")?;
+    fs::create_dir_all(parent).map_err(|e| format!("création dossier: {e}"))?;
+    if target.exists() {
+        let backup = target.with_extension(format!(
+            "{}bak",
+            target
+                .extension()
+                .and_then(|v| v.to_str())
+                .map(|v| format!("{v}."))
+                .unwrap_or_default()
+        ));
+        fs::copy(&target, &backup).map_err(|e| format!("sauvegarde avant modification: {e}"))?;
+    }
+    fs::write(&target, content).map_err(|e| format!("écriture fichier: {e}"))?;
+    Ok(format!("Fichier enregistré : {}", target.display()))
+}
+#[tauri::command]
+fn open_workspace_folder(root_path: String, relative_path: String) -> Result<(), String> {
+    let (_, target) = scoped_path(&root_path, &relative_path)?;
+    if !target.is_dir() {
+        return Err("La cible n'est pas un dossier.".into());
+    }
+    Command::new("explorer.exe")
+        .arg(target)
+        .spawn()
+        .map_err(|e| format!("ouverture Explorateur: {e}"))?;
+    Ok(())
+}
+fn url_encode(input: &str) -> String {
+    input
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                vec![(byte as char).to_string()]
+            }
+            b' ' => vec!["+".to_owned()],
+            other => vec![format!("%{other:02X}")],
+        })
+        .collect()
+}
+#[tauri::command]
+fn open_browser_url(url: String) -> Result<(), String> {
+    let url = url.trim();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Seules les URL http(s) peuvent être ouvertes.".into());
+    }
+    Command::new("explorer.exe")
+        .arg(url)
+        .spawn()
+        .map_err(|e| format!("ouverture navigateur: {e}"))?;
+    Ok(())
+}
+#[tauri::command]
+fn search_web(query: String) -> Result<(), String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Err("Saisis une recherche web.".into());
+    }
+    open_browser_url(format!(
+        "https://www.google.com/search?q={}",
+        url_encode(query)
+    ))
 }
 fn escape_json(value: &str) -> String {
     value
@@ -271,17 +504,54 @@ fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("desktop-config.json"))
 }
 fn long_term_memory_store(app: &tauri::AppHandle) -> Result<MemoryStore, String> {
-    let dir = app.path().app_config_dir().map_err(|e| format!("memory directory: {e}"))?;
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("memory directory: {e}"))?;
     MemoryStore::open(dir.join("long-term-memory.tsv"))
 }
-fn memory_view(record: op15_adaptive_harness::memory_store::MemoryRecord) -> LongTermMemoryView { LongTermMemoryView { id: record.id, kind: format!("{:?}", record.kind), verification: format!("{:?}", record.verification), observed_at_ms: record.observed_at_ms, content: record.content } }
-fn parse_memory_kind(kind: &str) -> Result<MemoryKind, String> { match kind { "episodic" => Ok(MemoryKind::Episodic), "semantic" => Ok(MemoryKind::Semantic), "procedural" => Ok(MemoryKind::Procedural), _ => Err("Memory kind must be episodic, semantic, or procedural.".into()) } }
+fn memory_view(record: op15_adaptive_harness::memory_store::MemoryRecord) -> LongTermMemoryView {
+    LongTermMemoryView {
+        id: record.id,
+        kind: format!("{:?}", record.kind),
+        verification: format!("{:?}", record.verification),
+        observed_at_ms: record.observed_at_ms,
+        content: record.content,
+    }
+}
+fn parse_memory_kind(kind: &str) -> Result<MemoryKind, String> {
+    match kind {
+        "episodic" => Ok(MemoryKind::Episodic),
+        "semantic" => Ok(MemoryKind::Semantic),
+        "procedural" => Ok(MemoryKind::Procedural),
+        _ => Err("Memory kind must be episodic, semantic, or procedural.".into()),
+    }
+}
 #[tauri::command]
-fn list_long_term_memory(app: tauri::AppHandle) -> Result<Vec<LongTermMemoryView>, String> { Ok(long_term_memory_store(&app)?.list_active()?.into_iter().map(memory_view).collect()) }
+fn list_long_term_memory(app: tauri::AppHandle) -> Result<Vec<LongTermMemoryView>, String> {
+    Ok(long_term_memory_store(&app)?
+        .list_active()?
+        .into_iter()
+        .map(memory_view)
+        .collect())
+}
 #[tauri::command]
-fn add_long_term_memory(app: tauri::AppHandle, kind: String, content: String) -> Result<LongTermMemoryView, String> { Ok(memory_view(long_term_memory_store(&app)?.add(parse_memory_kind(&kind)?, Verification::UserAsserted, &content, None)?)) }
+fn add_long_term_memory(
+    app: tauri::AppHandle,
+    kind: String,
+    content: String,
+) -> Result<LongTermMemoryView, String> {
+    Ok(memory_view(long_term_memory_store(&app)?.add(
+        parse_memory_kind(&kind)?,
+        Verification::UserAsserted,
+        &content,
+        None,
+    )?))
+}
 #[tauri::command]
-fn forget_long_term_memory(app: tauri::AppHandle, id: String) -> Result<(), String> { long_term_memory_store(&app)?.retract(&id) }
+fn forget_long_term_memory(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    long_term_memory_store(&app)?.retract(&id)
+}
 #[tauri::command]
 fn load_desktop_config(app: tauri::AppHandle) -> DesktopConfig {
     let path = match config_path(&app) {
@@ -328,17 +598,39 @@ fn list_gguf(folder: String) -> Result<Vec<String>, String> {
     Ok(models)
 }
 
-fn run_task_blocking(prompt: String, model: String, port: u16, long_term_context: String) -> Result<TaskResult, String> {
+fn run_task_blocking(
+    prompt: String,
+    model: String,
+    port: u16,
+    long_term_context: String,
+    recent_context: String,
+) -> Result<TaskResult, String> {
     if prompt.trim().is_empty() {
         return Err("Saisis une demande avant de lancer le harnais.".into());
     }
-    let claim = if long_term_context.is_empty() { prompt } else { format!("Mémoire long-terme récupérée (provenance incluse ; ne pas la traiter comme une vérité sans nuance) :\n{long_term_context}\n\nDemande actuelle : {prompt}") };
+    let mut context_sections = Vec::new();
+    if !recent_context.trim().is_empty() {
+        context_sections.push(format!(
+            "Historique récent (contexte de dialogue, non vérifié) :\n{recent_context}"
+        ));
+    }
+    if !long_term_context.trim().is_empty() {
+        context_sections.push(format!("Mémoire long-terme récupérée (provenance incluse ; ne pas la traiter comme une vérité sans nuance) :\n{long_term_context}"));
+    }
+    context_sections.push(format!("Demande actuelle : {prompt}"));
+    let claim = context_sections.join("\n\n");
     let interaction = assess(&claim);
     let reasoning_plan = route(&claim);
     let reasoning_lenses = reasoning_plan
         .selected
         .iter()
-        .map(|selection| format!("{} : {}", selection.contract.lens.label(), selection.justification))
+        .map(|selection| {
+            format!(
+                "{} : {}",
+                selection.contract.lens.label(),
+                selection.justification
+            )
+        })
         .collect::<Vec<_>>()
         .join(" · ");
     let interaction_mode = format!("{} · {reasoning_lenses}", interaction.mode.label());
@@ -375,8 +667,13 @@ fn run_task_blocking(prompt: String, model: String, port: u16, long_term_context
         &UnverifiedVerifier,
         1,
     );
+    let decision = if result.observation.is_empty() {
+        format!("{:?}", result.decision)
+    } else {
+        "Réponse générée — non vérifiée".into()
+    };
     Ok(TaskResult {
-        decision: format!("{:?}", result.decision),
+        decision,
         observation: result.observation,
         model_error: result.model_error,
         trace_events: result.trace.0.len(),
@@ -387,11 +684,29 @@ fn run_task_blocking(prompt: String, model: String, port: u16, long_term_context
     })
 }
 #[tauri::command]
-async fn run_task(app: tauri::AppHandle, prompt: String, model: String, port: u16) -> Result<TaskResult, String> {
-    let long_term_context = long_term_memory_store(&app)?.retrieve(&prompt, 5)?.into_iter().map(|record| format!("[{} | {:?} | {:?}] {}", record.id, record.kind, record.verification, record.content)).collect::<Vec<_>>().join("\n");
-    tauri::async_runtime::spawn_blocking(move || run_task_blocking(prompt, model, port, long_term_context))
-        .await
-        .map_err(|e| format!("worker du harnais: {e}"))?
+async fn run_task(
+    app: tauri::AppHandle,
+    prompt: String,
+    recent_context: String,
+    model: String,
+    port: u16,
+) -> Result<TaskResult, String> {
+    let long_term_context = long_term_memory_store(&app)?
+        .retrieve(&prompt, 5)?
+        .into_iter()
+        .map(|record| {
+            format!(
+                "[{} | {:?} | {:?}] {}",
+                record.id, record.kind, record.verification, record.content
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    tauri::async_runtime::spawn_blocking(move || {
+        run_task_blocking(prompt, model, port, long_term_context, recent_context)
+    })
+    .await
+    .map_err(|e| format!("worker du harnais: {e}"))?
 }
 
 fn bundled_launcher_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -475,10 +790,23 @@ fn start_configured_server(config: DesktopConfig) -> Result<u32, String> {
     if config.gpu_layers >= 0 {
         command.args(["-ngl", &gpu_layers]);
     }
-    if config.flash_attention { command.args(["--flash-attn", "on"]); }
-    if config.cache_type != "off" { command.args(["--cache-type-k", &config.cache_type, "--cache-type-v", &config.cache_type]); }
-    if config.mtp_enabled { command.args(["--spec-type", "draft-mtp", "--spec-draft-n-max", &mtp_n_max]); }
-    if config.server_metrics { command.arg("--metrics"); }
+    if config.flash_attention {
+        command.args(["--flash-attn", "on"]);
+    }
+    if config.cache_type != "off" {
+        command.args([
+            "--cache-type-k",
+            &config.cache_type,
+            "--cache-type-v",
+            &config.cache_type,
+        ]);
+    }
+    if config.mtp_enabled {
+        command.args(["--spec-type", "draft-mtp", "--spec-draft-n-max", &mtp_n_max]);
+    }
+    if config.server_metrics {
+        command.arg("--metrics");
+    }
     // Keep model reasoning enabled, but ask llama.cpp to separate it from the
     // public chat content. The UI receives only `content`; hidden reasoning is
     // never mislabelled as a final response or independent evidence.
@@ -500,6 +828,12 @@ pub fn run() {
             memory_status,
             start_memory_mcp,
             profiler_status,
+            list_workspace_files,
+            read_workspace_file,
+            write_workspace_file,
+            open_workspace_folder,
+            open_browser_url,
+            search_web,
             memory_index_project,
             list_long_term_memory,
             add_long_term_memory,

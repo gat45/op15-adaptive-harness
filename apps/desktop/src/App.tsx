@@ -40,6 +40,12 @@ type ProfilerStatus = {
   gpu_vram_used_mb: string | null;
   gpu_vram_total_mb: string | null;
 };
+type FileEntry = {
+  name: string;
+  relative_path: string;
+  is_directory: boolean;
+  size_bytes: number | null;
+};
 type Config = {
   gguf_path: string;
   server_path: string;
@@ -84,7 +90,9 @@ const blank: Config = {
   model_folder: "",
   context_size: 32768,
   gpu_layers: 999,
-  port: 18181,
+  // llama.cpp écoute classiquement sur 8080. Le profil GTX 1080 peut ensuite
+  // choisir 18181 pour exposer ses métriques.
+  port: 8080,
   threads: 8,
   parallel: 1,
   batch_size: 2048,
@@ -242,7 +250,9 @@ function Memory({ tools }: { tools?: boolean }) {
   const [s, setS] = useState<MemoryStatus | null>(null),
     [root, setRoot] = useState("D:\\op15-adaptive-harness"),
     [name, setName] = useState("op15-adaptive-harness"),
-    [mcpPath, setMcpPath] = useState("F:\\soos\\plugins\\codebase-memory-mcp.exe"),
+    [mcpPath, setMcpPath] = useState(
+      "F:\\soos\\plugins\\codebase-memory-mcp.exe",
+    ),
     [msg, setMsg] = useState(""),
     [records, setRecords] = useState<LongTermMemory[]>([]),
     [content, setContent] = useState(""),
@@ -520,7 +530,13 @@ function Settings({
   );
 }
 
-function Profiler({ port, elapsedMs }: { port: number; elapsedMs: number | null }) {
+function Profiler({
+  port,
+  elapsedMs,
+}: {
+  port: number;
+  elapsedMs: number | null;
+}) {
   const [status, setStatus] = useState<ProfilerStatus | null>(null);
   const refresh = () =>
     invoke<ProfilerStatus>("profiler_status", { port })
@@ -529,9 +545,12 @@ function Profiler({ port, elapsedMs }: { port: number; elapsedMs: number | null 
   useEffect(() => {
     refresh();
   }, [port]);
-  const gpu = status?.gpu_utilization_percent && status.gpu_vram_used_mb && status.gpu_vram_total_mb
-    ? `${status.gpu_utilization_percent}% · ${status.gpu_vram_used_mb} / ${status.gpu_vram_total_mb} Mo`
-    : "non remontée";
+  const gpu =
+    status?.gpu_utilization_percent &&
+    status.gpu_vram_used_mb &&
+    status.gpu_vram_total_mb
+      ? `${status.gpu_utilization_percent}% · ${status.gpu_vram_used_mb} / ${status.gpu_vram_total_mb} Mo`
+      : "non remontée";
   return (
     <article>
       <p className="role">PROFILER</p>
@@ -539,14 +558,214 @@ function Profiler({ port, elapsedMs }: { port: number; elapsedMs: number | null 
         <dt>Dernière exécution</dt>
         <dd>{elapsedMs ? `${elapsedMs} ms` : "aucune"}</dd>
         <dt>TTFT / tok/s</dt>
-        <dd>{status?.metrics_available ? "Métriques disponibles ; export détaillé à raccorder." : status?.metrics_message ?? "Vérification…"}</dd>
+        <dd>
+          {status?.metrics_available
+            ? "Métriques disponibles ; export détaillé à raccorder."
+            : (status?.metrics_message ?? "Vérification…")}
+        </dd>
         <dt>GPU détecté</dt>
         <dd>{status?.gpu_name ?? "nvidia-smi indisponible"}</dd>
         <dt>GPU / VRAM globale</dt>
         <dd>{gpu}</dd>
       </dl>
-      <div className="actions"><button onClick={refresh}>Actualiser</button></div>
-      <p className="rule">La télémétrie GPU est celle de la machine entière. Elle ne prouve pas, à elle seule, l’usage du modèle. Le profil GTX 1080 lance llama.cpp avec <code>--metrics</code> sur le port 18181.</p>
+      <div className="actions">
+        <button onClick={refresh}>Actualiser</button>
+      </div>
+      <p className="rule">
+        La télémétrie GPU est celle de la machine entière. Elle ne prouve pas, à
+        elle seule, l’usage du modèle. Le profil GTX 1080 lance llama.cpp avec{" "}
+        <code>--metrics</code> sur le port 18181.
+      </p>
+    </article>
+  );
+}
+
+function WorkspaceTools() {
+  const [root, setRoot] = useState("D:\\op15-adaptive-harness");
+  const [relativePath, setRelativePath] = useState("");
+  const [entries, setEntries] = useState<FileEntry[]>([]);
+  const [filePath, setFilePath] = useState("");
+  const [content, setContent] = useState("");
+  const [webQuery, setWebQuery] = useState("");
+  const [url, setUrl] = useState("https://");
+  const [message, setMessage] = useState("");
+  const list = async (path = relativePath) => {
+    try {
+      setEntries(
+        await invoke<FileEntry[]>("list_workspace_files", {
+          rootPath: root,
+          relativePath: path,
+        }),
+      );
+      setRelativePath(path);
+      setMessage(`Dossier ouvert : ${path || "."}`);
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  const chooseRoot = async () => {
+    const value = await open({
+      directory: true,
+      multiple: false,
+      title: "Choisir le dossier que le harnais peut gérer",
+    });
+    if (typeof value === "string") {
+      setRoot(value);
+      setRelativePath("");
+      setEntries([]);
+    }
+  };
+  const read = async (path: string) => {
+    try {
+      setContent(
+        await invoke<string>("read_workspace_file", {
+          rootPath: root,
+          relativePath: path,
+        }),
+      );
+      setFilePath(path);
+      setMessage(`Fichier chargé : ${path}`);
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  const write = async () => {
+    if (!filePath.trim()) {
+      setMessage("Indique un chemin de fichier relatif au dossier choisi.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Enregistrer « ${filePath} » dans le dossier autorisé ? Une copie .bak sera créée si le fichier existe.`,
+      )
+    )
+      return;
+    try {
+      setMessage(
+        await invoke<string>("write_workspace_file", {
+          rootPath: root,
+          relativePath: filePath,
+          content,
+        }),
+      );
+      list(relativePath);
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  const search = async () => {
+    try {
+      await invoke("search_web", { query: webQuery });
+      setMessage("Recherche ouverte dans le navigateur par défaut.");
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  const browse = async () => {
+    try {
+      await invoke("open_browser_url", { url });
+      setMessage("URL ouverte dans le navigateur par défaut.");
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+  return (
+    <article>
+      <p className="role">ACTIONS LOCALES APPROUVEES</p>
+      <h2>Fichiers et navigateur</h2>
+      <Notice>
+        Le dossier choisi délimite l’action. Lire, créer et modifier sont
+        visibles ici ; chaque écriture demande une confirmation et crée une
+        sauvegarde lorsque le fichier existe.
+      </Notice>
+      <label>
+        Dossier autorisé
+        <input value={root} onChange={(event) => setRoot(event.target.value)} />
+      </label>
+      <div className="actions">
+        <button onClick={chooseRoot}>Choisir un dossier</button>
+        <button onClick={() => list()}>Parcourir</button>
+        <button
+          onClick={() =>
+            invoke("open_workspace_folder", {
+              rootPath: root,
+              relativePath,
+            }).catch((error) => setMessage(String(error)))
+          }
+        >
+          Ouvrir dans l’Explorateur
+        </button>
+      </div>
+      <label>
+        Chemin dans le dossier
+        <input
+          value={relativePath}
+          placeholder="Sous-dossier facultatif"
+          onChange={(event) => setRelativePath(event.target.value)}
+        />
+      </label>
+      <div className="memory-list">
+        {entries.map((entry) => (
+          <div key={entry.relative_path} className="turn assistant">
+            <p className="role">
+              {entry.is_directory
+                ? "DOSSIER"
+                : `${entry.size_bytes ?? 0} octets`}
+            </p>
+            <pre>{entry.relative_path}</pre>
+            <button
+              onClick={() =>
+                entry.is_directory
+                  ? list(entry.relative_path)
+                  : read(entry.relative_path)
+              }
+            >
+              {entry.is_directory ? "Ouvrir" : "Lire"}
+            </button>
+          </div>
+        ))}
+      </div>
+      <fieldset>
+        <legend>Créer ou modifier un fichier</legend>
+        <label>
+          Fichier relatif
+          <input
+            value={filePath}
+            placeholder="notes/idee.md"
+            onChange={(event) => setFilePath(event.target.value)}
+          />
+        </label>
+        <label>
+          Contenu
+          <textarea
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            placeholder="Contenu à enregistrer"
+          />
+        </label>
+        <button className="primary" onClick={write}>
+          Enregistrer après confirmation
+        </button>
+      </fieldset>
+      <fieldset>
+        <legend>Navigateur internet</legend>
+        <label>
+          Recherche web
+          <input
+            value={webQuery}
+            onChange={(event) => setWebQuery(event.target.value)}
+          />
+        </label>
+        <button onClick={search} disabled={!webQuery.trim()}>
+          Rechercher dans le navigateur
+        </button>
+        <label>
+          URL http(s)
+          <input value={url} onChange={(event) => setUrl(event.target.value)} />
+        </label>
+        <button onClick={browse}>Ouvrir l’URL</button>
+      </fieldset>
+      {message && <Notice>{message}</Notice>}
     </article>
   );
 }
@@ -595,12 +814,10 @@ export default function App() {
         (t) => `${t.role === "user" ? "Utilisateur" : "Assistant"}: ${t.text}`,
       )
       .join("\n");
-    const request = context
-      ? `Historique récent :\n${context}\n\nNouvelle demande de l'utilisateur : ${text}`
-      : text;
     try {
       const response = await invoke<TaskResult>("run_task", {
-        prompt: request,
+        prompt: text,
+        recentContext: context,
         model: config.model_name,
         port: config.port || 8080,
       });
@@ -651,14 +868,14 @@ export default function App() {
           value={prompt}
           placeholder="Écris normalement : le contexte récent est conservé."
           onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (!running && status?.llama_reachable && prompt.trim()) {
-                  void submit(event as unknown as FormEvent);
-                }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              if (!running && status?.llama_reachable && prompt.trim()) {
+                void submit(event as unknown as FormEvent);
               }
-            }}
+            }
+          }}
         />
         <button type="button" onClick={clear}>
           Effacer mémoire
@@ -681,16 +898,28 @@ export default function App() {
         <dt>Compréhension du tour</dt>
         <dd>{result?.interaction_mode ?? "aucune"}</dd>
         <dt>Analyse du raisonnement</dt>
-        <dd>{result?.reasoning_lenses || "Aucune lentille approfondie requise pour ce tour."}</dd>
+        <dd>
+          {result?.reasoning_lenses ||
+            "Aucune lentille approfondie requise pour ce tour."}
+        </dd>
         <dt>Trace</dt>
         <dd>{result ? `${result.trace_events} événement(s)` : "aucune"}</dd>
         <dt>Oracle</dt>
         <dd>{result?.independently_verified ? "validé" : "non configuré"}</dd>
       </dl>
-      <p className="rule">{result?.observation ? "Une réponse a été générée. Elle reste non vérifiée sans oracle indépendant." : status?.verification_rule}</p>
+      <p className="rule">
+        {result?.observation
+          ? "Une réponse a été générée. Elle reste non vérifiée sans oracle indépendant."
+          : status?.verification_rule}
+      </p>
     </article>
   );
-  const profiler = <Profiler port={config.port || 8080} elapsedMs={result?.elapsed_ms ?? null} />;
+  const profiler = (
+    <Profiler
+      port={config.port || 8080}
+      elapsedMs={result?.elapsed_ms ?? null}
+    />
+  );
   const bench = (
     <article>
       <p className="role">BENCHMARKS</p>
@@ -704,7 +933,13 @@ export default function App() {
   let content: React.ReactNode = chat;
   if (page === "Agent") content = agent;
   if (page === "Memoire") content = <Memory />;
-  if (page === "Outils MCP") content = <Memory tools />;
+  if (page === "Outils MCP")
+    content = (
+      <>
+        <Memory tools />
+        <WorkspaceTools />
+      </>
+    );
   if (page === "Modeles")
     content = (
       <Models config={config} setConfig={setConfig} refresh={refresh} />

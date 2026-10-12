@@ -1,32 +1,292 @@
 //! A small, auditable memory store. It deliberately has no implicit LLM write
 //! path: callers must explicitly add a memory or attach an extraction verdict.
-use std::{collections::HashSet, fs::{self, OpenOptions}, io::Write, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    collections::HashSet,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MemoryKind { Episodic, Semantic, Procedural }
-impl MemoryKind { fn as_str(&self) -> &'static str { match self { Self::Episodic => "episodic", Self::Semantic => "semantic", Self::Procedural => "procedural" } } fn parse(value: &str) -> Option<Self> { match value { "episodic" => Some(Self::Episodic), "semantic" => Some(Self::Semantic), "procedural" => Some(Self::Procedural), _ => None } } }
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Verification { UserAsserted, ToolObserved, IndependentlyVerified, Inferred, Retracted }
-impl Verification { fn as_str(&self) -> &'static str { match self { Self::UserAsserted => "user_asserted", Self::ToolObserved => "tool_observed", Self::IndependentlyVerified => "independently_verified", Self::Inferred => "inferred", Self::Retracted => "retracted" } } fn parse(value: &str) -> Option<Self> { match value { "user_asserted" => Some(Self::UserAsserted), "tool_observed" => Some(Self::ToolObserved), "independently_verified" => Some(Self::IndependentlyVerified), "inferred" => Some(Self::Inferred), "retracted" => Some(Self::Retracted), _ => None } } }
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MemoryRecord { pub id: String, pub kind: MemoryKind, pub verification: Verification, pub observed_at_ms: u128, pub valid_until_ms: Option<u128>, pub content: String }
-pub struct MemoryStore { path: PathBuf }
-impl MemoryStore {
-    pub fn open(path: impl Into<PathBuf>) -> Result<Self, String> { let path = path.into(); if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|e| format!("memory directory: {e}"))?; } if !path.exists() { fs::write(&path, "# adaptive-harness-memory-v1\n").map_err(|e| format!("memory file: {e}"))?; } Ok(Self { path }) }
-    pub fn add(&self, kind: MemoryKind, verification: Verification, content: &str, valid_until_ms: Option<u128>) -> Result<MemoryRecord, String> { let content = content.trim(); if content.is_empty() { return Err("A memory cannot be empty.".into()); } let observed_at_ms = now_ms()?; let record = MemoryRecord { id: format!("m-{observed_at_ms}"), kind, verification, observed_at_ms, valid_until_ms, content: content.to_owned() }; let line = format!("{}\t{}\t{}\t{}\t{}\t{}\n", record.id, record.kind.as_str(), record.verification.as_str(), record.observed_at_ms, record.valid_until_ms.map(|v| v.to_string()).unwrap_or_default(), escape(&record.content)); let mut file = OpenOptions::new().append(true).open(&self.path).map_err(|e| format!("memory append: {e}"))?; file.write_all(line.as_bytes()).map_err(|e| format!("memory write: {e}"))?; file.sync_data().map_err(|e| format!("memory sync: {e}"))?; Ok(record) }
-    pub fn list_active(&self) -> Result<Vec<MemoryRecord>, String> { let text = fs::read_to_string(&self.path).map_err(|e| format!("memory read: {e}"))?; let now = now_ms()?; let records = text.lines().filter(|line| !line.starts_with('#')).filter_map(parse).collect::<Vec<_>>(); let retracted = records.iter().filter(|record| record.verification == Verification::Retracted).map(|record| record.content.clone()).collect::<HashSet<_>>(); let mut active = records.into_iter().filter(|record| record.verification != Verification::Retracted && !retracted.contains(&record.id) && record.valid_until_ms.is_none_or(|until| until >= now)).collect::<Vec<_>>(); active.sort_by_key(|record| std::cmp::Reverse(record.observed_at_ms)); Ok(active) }
-    pub fn retract(&self, id: &str) -> Result<(), String> { if !self.list_active()?.iter().any(|record| record.id == id) { return Err("Unknown or already retracted memory.".into()); } self.add(MemoryKind::Episodic, Verification::Retracted, id, None).map(|_| ()) }
-    pub fn retrieve(&self, query: &str, limit: usize) -> Result<Vec<MemoryRecord>, String> { let terms = tokens(query); let mut records = self.list_active()?; records.sort_by_key(|record| { let score = tokens(&record.content).iter().filter(|term| terms.contains(*term)).count(); (std::cmp::Reverse(score), std::cmp::Reverse(record.observed_at_ms)) }); Ok(records.into_iter().filter(|record| !terms.is_empty() && tokens(&record.content).iter().any(|term| terms.contains(term))).take(limit).collect()) }
-    pub fn path(&self) -> &Path { &self.path }
+pub enum MemoryKind {
+    Episodic,
+    Semantic,
+    Procedural,
 }
-fn now_ms() -> Result<u128, String> { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).map_err(|e| e.to_string()) }
-fn escape(value: &str) -> String { value.replace('\\', "\\\\").replace('\t', "\\t").replace('\n', "\\n") }
-fn unescape(value: &str) -> String { let mut out = String::new(); let mut escaped = false; for c in value.chars() { if escaped { out.push(match c { 'n' => '\n', 't' => '\t', '\\' => '\\', other => other }); escaped = false; } else if c == '\\' { escaped = true; } else { out.push(c); } } out }
-fn parse(line: &str) -> Option<MemoryRecord> { let parts = line.splitn(6, '\t').collect::<Vec<_>>(); if parts.len() != 6 { return None; } Some(MemoryRecord { id: parts[0].into(), kind: MemoryKind::parse(parts[1])?, verification: Verification::parse(parts[2])?, observed_at_ms: parts[3].parse().ok()?, valid_until_ms: if parts[4].is_empty() { None } else { Some(parts[4].parse().ok()?) }, content: unescape(parts[5]) }) }
-fn tokens(value: &str) -> Vec<String> { value.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|word| word.len() > 2).map(str::to_owned).collect() }
+impl MemoryKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Episodic => "episodic",
+            Self::Semantic => "semantic",
+            Self::Procedural => "procedural",
+        }
+    }
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "episodic" => Some(Self::Episodic),
+            "semantic" => Some(Self::Semantic),
+            "procedural" => Some(Self::Procedural),
+            _ => None,
+        }
+    }
+}
 
-#[cfg(test)] mod tests { use super::*; fn path(name: &str) -> PathBuf { std::env::temp_dir().join(format!("adaptive-memory-{name}-{}.tsv", now_ms().unwrap())) }
-#[test] fn writes_retrieves_and_retracts() { let path = path("memory"); let store = MemoryStore::open(&path).unwrap(); let memory = store.add(MemoryKind::Semantic, Verification::UserAsserted, "L'utilisateur préfère le français.", None).unwrap(); assert_eq!(store.retrieve("Quelle langue préfère l'utilisateur ?", 3).unwrap().len(), 1); store.retract(&memory.id).unwrap(); assert!(store.list_active().unwrap().is_empty()); fs::remove_file(path).unwrap(); }
-#[test] fn does_not_promote_inference_as_verified() { let path = path("provenance"); let store = MemoryStore::open(&path).unwrap(); let memory = store.add(MemoryKind::Procedural, Verification::Inferred, "Toujours confirmer avant suppression.", None).unwrap(); assert_eq!(memory.verification, Verification::Inferred); fs::remove_file(path).unwrap(); } }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Verification {
+    UserAsserted,
+    ToolObserved,
+    IndependentlyVerified,
+    Inferred,
+    Retracted,
+}
+impl Verification {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::UserAsserted => "user_asserted",
+            Self::ToolObserved => "tool_observed",
+            Self::IndependentlyVerified => "independently_verified",
+            Self::Inferred => "inferred",
+            Self::Retracted => "retracted",
+        }
+    }
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "user_asserted" => Some(Self::UserAsserted),
+            "tool_observed" => Some(Self::ToolObserved),
+            "independently_verified" => Some(Self::IndependentlyVerified),
+            "inferred" => Some(Self::Inferred),
+            "retracted" => Some(Self::Retracted),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MemoryRecord {
+    pub id: String,
+    pub kind: MemoryKind,
+    pub verification: Verification,
+    pub observed_at_ms: u128,
+    pub valid_until_ms: Option<u128>,
+    pub content: String,
+}
+pub struct MemoryStore {
+    path: PathBuf,
+}
+impl MemoryStore {
+    pub fn open(path: impl Into<PathBuf>) -> Result<Self, String> {
+        let path = path.into();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("memory directory: {e}"))?;
+        }
+        if !path.exists() {
+            fs::write(&path, "# adaptive-harness-memory-v1\n")
+                .map_err(|e| format!("memory file: {e}"))?;
+        }
+        Ok(Self { path })
+    }
+    pub fn add(
+        &self,
+        kind: MemoryKind,
+        verification: Verification,
+        content: &str,
+        valid_until_ms: Option<u128>,
+    ) -> Result<MemoryRecord, String> {
+        let content = content.trim();
+        if content.is_empty() {
+            return Err("A memory cannot be empty.".into());
+        }
+        let observed_at_ms = now_ms()?;
+        let record = MemoryRecord {
+            id: format!("m-{observed_at_ms}"),
+            kind,
+            verification,
+            observed_at_ms,
+            valid_until_ms,
+            content: content.to_owned(),
+        };
+        let line = format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            record.id,
+            record.kind.as_str(),
+            record.verification.as_str(),
+            record.observed_at_ms,
+            record
+                .valid_until_ms
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            escape(&record.content)
+        );
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open(&self.path)
+            .map_err(|e| format!("memory append: {e}"))?;
+        file.write_all(line.as_bytes())
+            .map_err(|e| format!("memory write: {e}"))?;
+        file.sync_data().map_err(|e| format!("memory sync: {e}"))?;
+        Ok(record)
+    }
+    pub fn list_active(&self) -> Result<Vec<MemoryRecord>, String> {
+        let text = fs::read_to_string(&self.path).map_err(|e| format!("memory read: {e}"))?;
+        let now = now_ms()?;
+        let records = text
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .filter_map(parse)
+            .collect::<Vec<_>>();
+        let retracted = records
+            .iter()
+            .filter(|record| record.verification == Verification::Retracted)
+            .map(|record| record.content.clone())
+            .collect::<HashSet<_>>();
+        let mut active = records
+            .into_iter()
+            .filter(|record| {
+                record.verification != Verification::Retracted
+                    && !retracted.contains(&record.id)
+                    && record.valid_until_ms.is_none_or(|until| until >= now)
+            })
+            .collect::<Vec<_>>();
+        active.sort_by_key(|record| std::cmp::Reverse(record.observed_at_ms));
+        Ok(active)
+    }
+    pub fn retract(&self, id: &str) -> Result<(), String> {
+        if !self.list_active()?.iter().any(|record| record.id == id) {
+            return Err("Unknown or already retracted memory.".into());
+        }
+        self.add(MemoryKind::Episodic, Verification::Retracted, id, None)
+            .map(|_| ())
+    }
+    pub fn retrieve(&self, query: &str, limit: usize) -> Result<Vec<MemoryRecord>, String> {
+        let terms = tokens(query);
+        let mut records = self.list_active()?;
+        records.sort_by_key(|record| {
+            let score = tokens(&record.content)
+                .iter()
+                .filter(|term| terms.contains(*term))
+                .count();
+            (
+                std::cmp::Reverse(score),
+                std::cmp::Reverse(record.observed_at_ms),
+            )
+        });
+        Ok(records
+            .into_iter()
+            .filter(|record| {
+                !terms.is_empty()
+                    && tokens(&record.content)
+                        .iter()
+                        .any(|term| terms.contains(term))
+            })
+            .take(limit)
+            .collect())
+    }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+fn now_ms() -> Result<u128, String> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .map_err(|e| e.to_string())
+}
+fn escape(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\t', "\\t")
+        .replace('\n', "\\n")
+}
+fn unescape(value: &str) -> String {
+    let mut out = String::new();
+    let mut escaped = false;
+    for c in value.chars() {
+        if escaped {
+            out.push(match c {
+                'n' => '\n',
+                't' => '\t',
+                '\\' => '\\',
+                other => other,
+            });
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+fn parse(line: &str) -> Option<MemoryRecord> {
+    let parts = line.splitn(6, '\t').collect::<Vec<_>>();
+    if parts.len() != 6 {
+        return None;
+    }
+    Some(MemoryRecord {
+        id: parts[0].into(),
+        kind: MemoryKind::parse(parts[1])?,
+        verification: Verification::parse(parts[2])?,
+        observed_at_ms: parts[3].parse().ok()?,
+        valid_until_ms: if parts[4].is_empty() {
+            None
+        } else {
+            Some(parts[4].parse().ok()?)
+        },
+        content: unescape(parts[5]),
+    })
+}
+fn tokens(value: &str) -> Vec<String> {
+    value
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| word.len() > 2)
+        .map(str::to_owned)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("adaptive-memory-{name}-{}.tsv", now_ms().unwrap()))
+    }
+    #[test]
+    fn writes_retrieves_and_retracts() {
+        let path = path("memory");
+        let store = MemoryStore::open(&path).unwrap();
+        let memory = store
+            .add(
+                MemoryKind::Semantic,
+                Verification::UserAsserted,
+                "L'utilisateur préfère le français.",
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .retrieve("Quelle langue préfère l'utilisateur ?", 3)
+                .unwrap()
+                .len(),
+            1
+        );
+        store.retract(&memory.id).unwrap();
+        assert!(store.list_active().unwrap().is_empty());
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn does_not_promote_inference_as_verified() {
+        let path = path("provenance");
+        let store = MemoryStore::open(&path).unwrap();
+        let memory = store
+            .add(
+                MemoryKind::Procedural,
+                Verification::Inferred,
+                "Toujours confirmer avant suppression.",
+                None,
+            )
+            .unwrap();
+        assert_eq!(memory.verification, Verification::Inferred);
+        fs::remove_file(path).unwrap();
+    }
+}
