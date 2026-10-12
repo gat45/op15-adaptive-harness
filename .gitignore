@@ -1,2 +1,6 @@
 /target/
 *.state
+/external/
+/integrations/*.local.json
+/integrations/*.local.md
+/audit/*.jsonl
