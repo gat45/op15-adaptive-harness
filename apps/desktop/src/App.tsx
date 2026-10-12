@@ -24,6 +24,7 @@ type TaskResult = {
   server_predicted_per_second: number | null;
   interaction_mode: string;
   reasoning_lenses: string;
+  specialists: string;
 };
 type LauncherStatus = {
   file_exists: boolean;
@@ -932,6 +933,11 @@ export default function App() {
         <dd>
           {result?.reasoning_lenses ||
             "Aucune lentille approfondie requise pour ce tour."}
+        </dd>
+        <dt>Spécialistes mobilisés</dt>
+        <dd>
+          {result?.specialists ||
+            "Aucun rôle spécialisé requis pour ce tour."}
         </dd>
         <dt>Trace</dt>
         <dd>{result ? `${result.trace_events} événement(s)` : "aucune"}</dd>

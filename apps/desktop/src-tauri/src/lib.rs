@@ -4,6 +4,7 @@ use op15_adaptive_harness::{
     loop_runner::TaskLoop,
     memory_store::{MemoryKind, MemoryStore, Verification},
     reasoning_router::route,
+    specialists::{guidance as specialist_guidance, select as select_specialists},
     verifier::{Verdict, VerificationRequest, Verifier},
 };
 use serde::{Deserialize, Serialize};
@@ -57,6 +58,7 @@ struct TaskResult {
     server_predicted_per_second: Option<f64>,
     interaction_mode: String,
     reasoning_lenses: String,
+    specialists: String,
 }
 #[derive(Serialize)]
 struct LauncherStatus {
@@ -613,6 +615,12 @@ fn run_task_blocking(
     if prompt.trim().is_empty() {
         return Err("Saisis une demande avant de lancer le harnais.".into());
     }
+    let assignments = select_specialists(&prompt);
+    let specialists = assignments
+        .iter()
+        .map(|assignment| format!("{} : {}", assignment.specialist.label(), assignment.justification))
+        .collect::<Vec<_>>()
+        .join(" · ");
     let mut context_sections = Vec::new();
     if !recent_context.trim().is_empty() {
         context_sections.push(format!(
@@ -622,10 +630,16 @@ fn run_task_blocking(
     if !long_term_context.trim().is_empty() {
         context_sections.push(format!("Mémoire long-terme récupérée (provenance incluse ; ne pas la traiter comme une vérité sans nuance) :\n{long_term_context}"));
     }
+    if !assignments.is_empty() {
+        context_sections.push(format!(
+            "Rôles spécialisés sélectionnés (orientations, pas des oracles) : {}",
+            specialist_guidance(&assignments)
+        ));
+    }
     context_sections.push(format!("Demande actuelle : {prompt}"));
     let claim = context_sections.join("\n\n");
     let interaction = assess(&claim);
-    let reasoning_plan = route(&claim);
+    let reasoning_plan = route(&prompt);
     let reasoning_lenses = reasoning_plan
         .selected
         .iter()
@@ -696,6 +710,7 @@ fn run_task_blocking(
         server_predicted_per_second: result.server_predicted_per_second,
         interaction_mode,
         reasoning_lenses,
+        specialists,
     })
 }
 #[tauri::command]

@@ -32,6 +32,7 @@ pub struct InteractionAssessment {
 pub fn current_message(prompt: &str) -> &str {
     prompt
         .rsplit_once("Nouvelle demande de l'utilisateur :")
+        .or_else(|| prompt.rsplit_once("Demande actuelle :"))
         .map(|(_, message)| message.trim())
         .unwrap_or(prompt.trim())
 }
@@ -100,5 +101,13 @@ mod tests {
         );
         assert_eq!(assessment.mode, InteractionMode::Action);
         assert!(!assessment.ask_clarification);
+    }
+
+    #[test]
+    fn desktop_context_keeps_the_current_message_as_the_signal() {
+        assert_eq!(
+            current_message("Historique récent :\nUtilisateur : bonjour\n\nDemande actuelle : corrige ça"),
+            "corrige ça"
+        );
     }
 }

@@ -16,6 +16,7 @@ pub mod policy_registry;
 pub mod reasoning_router;
 pub mod runner;
 pub mod self_model;
+pub mod specialists;
 pub mod state;
 pub mod trace;
 pub mod verifier;
