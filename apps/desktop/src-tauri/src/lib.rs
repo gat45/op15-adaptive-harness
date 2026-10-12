@@ -50,6 +50,11 @@ struct TaskResult {
     trace_events: usize,
     independently_verified: bool,
     elapsed_ms: u128,
+    generation_elapsed_ms: Option<u128>,
+    completion_tokens: Option<u64>,
+    generation_tokens_per_second: Option<f64>,
+    server_prompt_ms: Option<f64>,
+    server_predicted_per_second: Option<f64>,
     interaction_mode: String,
     reasoning_lenses: String,
 }
@@ -679,6 +684,16 @@ fn run_task_blocking(
         trace_events: result.trace.0.len(),
         independently_verified: false,
         elapsed_ms: started.elapsed().as_millis(),
+        generation_elapsed_ms: result.generation_elapsed_ms,
+        completion_tokens: result.completion_tokens,
+        generation_tokens_per_second: result
+            .completion_tokens
+            .zip(result.generation_elapsed_ms)
+            .and_then(|(tokens, elapsed)| {
+                (elapsed > 0).then(|| tokens as f64 / (elapsed as f64 / 1000.0))
+            }),
+        server_prompt_ms: result.server_prompt_ms,
+        server_predicted_per_second: result.server_predicted_per_second,
         interaction_mode,
         reasoning_lenses,
     })

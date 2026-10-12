@@ -56,10 +56,13 @@ pub fn public_text(text: &str) -> String {
     output.trim().to_owned()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Completion {
     pub text: String,
     pub total_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+    pub prompt_ms: Option<f64>,
+    pub predicted_per_second: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +125,9 @@ impl LlamaCppClient {
             text: json_string_after(payload, "\"content\":")
                 .ok_or("chat completion content missing")?,
             total_tokens: json_number_after(payload, "\"total_tokens\":"),
+            completion_tokens: json_number_after(payload, "\"completion_tokens\":"),
+            prompt_ms: json_float_after(payload, "\"prompt_ms\":"),
+            predicted_per_second: json_float_after(payload, "\"predicted_per_second\":"),
         })
     }
 }
@@ -181,15 +187,29 @@ fn json_number_after(input: &str, key: &str) -> Option<u64> {
         .parse()
         .ok()
 }
+fn json_float_after(input: &str, key: &str) -> Option<f64> {
+    input
+        .split_once(key)?
+        .1
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'))
+        .collect::<String>()
+        .parse()
+        .ok()
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn parses_completion() {
-        let p = r#"{"choices":[{"message":{"content":"ok\n"}}],"usage":{"total_tokens":12}}"#;
+        let p = r#"{"choices":[{"message":{"content":"ok\n"}}],"usage":{"total_tokens":12,"completion_tokens":5},"timings":{"prompt_ms":96.5,"predicted_per_second":31.5}}"#;
         assert_eq!(json_string_after(p, "\"content\":"), Some("ok\n".into()));
         assert_eq!(json_number_after(p, "\"total_tokens\":"), Some(12));
+        assert_eq!(json_number_after(p, "\"completion_tokens\":"), Some(5));
+        assert_eq!(json_float_after(p, "\"prompt_ms\":"), Some(96.5));
+        assert_eq!(json_float_after(p, "\"predicted_per_second\":"), Some(31.5));
     }
     #[test]
     fn removes_complete_or_partial_thinking() {

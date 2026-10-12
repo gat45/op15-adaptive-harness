@@ -13,6 +13,10 @@ pub struct LoopResult {
     pub observation: String,
     pub model_error: Option<String>,
     pub trace: CausalTrace,
+    pub generation_elapsed_ms: Option<u128>,
+    pub completion_tokens: Option<u64>,
+    pub server_prompt_ms: Option<f64>,
+    pub server_predicted_per_second: Option<f64>,
 }
 pub struct TaskLoop;
 impl TaskLoop {
@@ -29,6 +33,10 @@ impl TaskLoop {
         let mut remaining = budget;
         let mut observation = String::new();
         let mut model_error = None;
+        let mut generation_elapsed_ms = None;
+        let mut completion_tokens = None;
+        let mut server_prompt_ms = None;
+        let mut server_predicted_per_second = None;
         for step in 0..max_steps {
             let d = Controller::decide(task, &evidence, remaining, retrieve_cost);
             match d {
@@ -41,6 +49,10 @@ impl TaskLoop {
                             observation,
                             model_error,
                             trace,
+                            generation_elapsed_ms,
+                            completion_tokens,
+                            server_prompt_ms,
+                            server_predicted_per_second,
                         };
                     };
                     let started = Instant::now();
@@ -49,8 +61,12 @@ impl TaskLoop {
                     // separate reasoning budget; this remains an output cap.
                     let max_tokens = retrieve_cost.tokens.min(768).max(1) as u16;
                     let result = client.complete(&public_answer_prompt(&task.claim), max_tokens);
+                    generation_elapsed_ms = Some(started.elapsed().as_millis());
                     observation = match result {
                         Ok(c) => {
+                            completion_tokens = c.completion_tokens;
+                            server_prompt_ms = c.prompt_ms;
+                            server_predicted_per_second = c.predicted_per_second;
                             let answer = public_text(&c.text);
                             if answer.is_empty() {
                                 model_error=Some("Le modèle n'a produit aucune réponse publique ; augmente le budget de génération ou change de modèle.".into());
@@ -94,6 +110,10 @@ impl TaskLoop {
                             observation,
                             model_error,
                             trace,
+                            generation_elapsed_ms,
+                            completion_tokens,
+                            server_prompt_ms,
+                            server_predicted_per_second,
                         };
                     }
                 }
@@ -103,6 +123,10 @@ impl TaskLoop {
                         observation,
                         model_error,
                         trace,
+                        generation_elapsed_ms,
+                        completion_tokens,
+                        server_prompt_ms,
+                        server_predicted_per_second,
                     };
                 }
             }
@@ -112,6 +136,10 @@ impl TaskLoop {
             observation,
             model_error,
             trace,
+            generation_elapsed_ms,
+            completion_tokens,
+            server_prompt_ms,
+            server_predicted_per_second,
         }
     }
 }

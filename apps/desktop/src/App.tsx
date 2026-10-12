@@ -17,6 +17,11 @@ type TaskResult = {
   trace_events: number;
   independently_verified: boolean;
   elapsed_ms: number;
+  generation_elapsed_ms: number | null;
+  completion_tokens: number | null;
+  generation_tokens_per_second: number | null;
+  server_prompt_ms: number | null;
+  server_predicted_per_second: number | null;
   interaction_mode: string;
   reasoning_lenses: string;
 };
@@ -787,6 +792,7 @@ export default function App() {
     [prompt, setPrompt] = useState(""),
     [turns, setTurns] = useState<Turn[]>([]),
     [result, setResult] = useState<TaskResult | null>(null),
+    [footerProfiler, setFooterProfiler] = useState<ProfilerStatus | null>(null),
     [error, setError] = useState(""),
     [running, setRunning] = useState(false);
   const refresh = () =>
@@ -805,6 +811,11 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [config.port]);
+  useEffect(() => {
+    invoke<ProfilerStatus>("profiler_status", { port: config.port || 8080 })
+      .then(setFooterProfiler)
+      .catch(() => setFooterProfiler(null));
+  }, [config.port, result?.elapsed_ms]);
   useEffect(() => {
     localStorage.setItem(memoryKey, JSON.stringify(turns.slice(-20)));
   }, [turns]);
@@ -1014,7 +1025,17 @@ export default function App() {
       </aside>
       <footer>
         Exécution locale · durée : {result ? `${result.elapsed_ms} ms` : "aucune"}
-        {" · "}diagnostics matériels dans Profiler
+        {result?.server_predicted_per_second != null
+          ? ` · génération : ${result.server_predicted_per_second.toFixed(1)} tok/s (${result.completion_tokens} tokens)`
+          : result?.generation_tokens_per_second != null
+            ? ` · génération : ${result.generation_tokens_per_second.toFixed(1)} tok/s (${result.completion_tokens} tokens)`
+          : " · tok/s : non fourni par le serveur"}
+        {result?.server_prompt_ms != null
+          ? ` · préfill/TTFT approx. : ${result.server_prompt_ms.toFixed(0)} ms`
+          : " · TTFT : non mesurable sans streaming"}
+        {footerProfiler?.gpu_name
+          ? ` · ${footerProfiler.gpu_name} : ${footerProfiler.gpu_utilization_percent ?? "?"}% · VRAM ${footerProfiler.gpu_vram_used_mb ?? "?"}/${footerProfiler.gpu_vram_total_mb ?? "?"} Mo (machine)`
+          : " · GPU/VRAM : nvidia-smi indisponible"}
       </footer>
     </main>
   );
