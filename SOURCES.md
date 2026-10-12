@@ -5,6 +5,8 @@ une piste documentée, jamais une validation automatique ou une dépendance.
 
 ## Projets personnels et OP15
 
+- https://github.com/gat45/op15-adaptive-harness
+- https://github.com/gat45
 - https://github.com/GaTmaNnes
 - https://github.com/gat45?tab=repositories
 - https://github.com/GaTmaNnes/gouvernord
@@ -161,3 +163,97 @@ une piste documentée, jamais une validation automatique ou une dépendance.
 - [Rust Self-Learning Memory](https://github.com/d-o-hub/rust-self-learning-memory) — mémoire épisodique et checkpoints, référence à évaluer.
 - [MemMesh](https://github.com/ThinkfleetAI/memmesh) — mémoire locale Rust et MCP, référence à évaluer.
 - [Aura Memory](https://github.com/teolex2020/aura-memory) — mémoire cognitive et adaptation bornée, référence à évaluer.
+
+## Android, agents locaux et portage APK
+
+Ces projets servent de comparateurs. Aucun accès Android, permission, modèle ou
+code tiers n'est adopté sans audit de licence, de sécurité et de compatibilité.
+
+- https://github.com/aohp-os/aohp
+- https://arxiv.org/abs/2606.23449
+- https://github.com/tokenarc/open-jarvis
+- https://github.com/NickMonrad/kernel-ai-assistant
+- https://github.com/flagdizero/jenny-android-ai-agent
+- https://github.com/ModalityDance/PalmClaw
+- https://github.com/natanloterio/Brownie
+- https://github.com/imoonkey/closepaw
+- https://github.com/inehemiasm/AiAssistant
+- https://github.com/Quor-a/ZorvAI
+- https://github.com/google/adk-kotlin
+- https://github.com/eibragaa/droid-harness
+- https://github.com/google-ai-edge/LiteRT-LM
+- https://ai.google.dev/edge/litert-lm
+- https://developer.android.com/topic/architecture
+- https://developer.android.com/topic/architecture/data-layer
+- https://developer.android.com/training/data-storage/room
+- https://www.sqlite.org/docs.html
+- https://developer.android.com/topic/libraries/architecture/workmanager
+
+## Mémoire persistante : comparateurs et documentation
+
+- https://docs.letta.com/
+- https://github.com/letta-ai/letta-agent-sdk
+- https://docs.mem0.ai/
+- https://github.com/getzep/graphiti
+- https://help.getzep.com/graphiti
+- https://github.com/langchain-ai/langmem
+- https://langchain-ai.github.io/langmem/
+- https://github.com/topoteretes/cognee
+- https://docs.cognee.ai/
+- https://github.com/jacobycoffin/cortex-memory
+- https://github.com/engram-memory/engram
+- https://github.com/snap-research/locomo
+- https://arxiv.org/search/?query=LongMemEval&searchtype=all
+- https://arxiv.org/search/?query=LLM+agent+long-term+memory&searchtype=all
+
+## Logique, arguments, paradoxes et dilemmes
+
+Une source de logique formelle ne valide que la formulation qui lui est donnée.
+La fidélité au langage naturel, la qualité des prémisses et les désaccords de
+valeurs doivent rester explicitement évalués.
+
+- https://github.com/teacherpeterpan/Logic-LLM
+- https://arxiv.org/abs/2305.12295
+- https://aclanthology.org/2023.findings-emnlp.248/
+- https://github.com/Yale-LILY/FOLIO
+- https://arxiv.org/abs/2209.00840
+- https://lean-lang.org/
+- https://github.com/leanprover/lean4
+- https://lean-lang.org/doc/reference/latest/
+- https://github.com/lean-dojo/LeanAgent
+- https://github.com/lean-dojo/LeanDojo-v2
+- https://arxiv.org/abs/2502.06243
+- https://github.com/argdown/argdown
+- https://argdown.org/
+- https://argdown.org/guide/
+- https://argdown.org/sandbox/
+- https://github.com/liweijiang/delphi
+- https://arxiv.org/abs/2206.09515
+- https://www.nature.com/articles/s42256-024-00969-6
+- https://aclanthology.org/2024.lrec-main.726/
+- https://aclanthology.org/2024.lrec-main.1243/
+- https://aclanthology.org/2025.emnlp-main.1411/
+- https://plato.stanford.edu/entries/logic-paraconsistent/
+- https://plato.stanford.edu/entries/logic-classical/
+- https://plato.stanford.edu/entries/paradoxes-contemporary-logic/
+- https://plato.stanford.edu/entries/logic-fuzzy/
+- https://plato.stanford.edu/entries/liar-paradox/
+- https://aclanthology.org/2024.acl-long.126/
+- https://doi.org/10.1038/s41598-025-18489-7
+- https://github.com/The-Responsible-AI-Initiative/LLM_Ethics_Benchmark.git
+- https://aclanthology.org/2024.emnlp-main.1224/
+- https://arxiv.org/search/?query=ACT-R+cognitive+architecture&searchtype=all
+- https://arxiv.org/search/?query=LIDA+cognitive+architecture&searchtype=all
+
+## Jarvix Memory : pages de découverte et articles secondaires
+
+Ces pages ne remplacent pas le dépôt source ni sa licence ; elles sont
+conservées comme pistes de découverte.
+
+- https://glama.ai/mcp/servers/gat45/jarvix-memory
+- https://glama.ai/mcp/servers/gat45/jarvix-memory/tree
+- https://glama.ai/mcp/servers/gat45/jarvix-memory/schema
+- https://glama.ai/mcp/servers/gat45/jarvix-memory/related-servers
+- https://www.aiboardmeeting.com/agents/jarvix_memory
+- https://mobilestalk.net/deconstructing-multi-layer-persistent-memory-in-open-source-ai-agents-insights-from-jarvix-memory-and-engram/
+- https://geekchamp.com/how-layered-persistent-memory-works-in-open-source-ai-agents/
