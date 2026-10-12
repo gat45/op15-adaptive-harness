@@ -16,25 +16,36 @@ verified because the bundled availability check does not verify the claim.
 
 ## Build and run
 
+For development (the Vite server stays running):
+
 ```text
 cd apps/desktop
 npm install
 npm run tauri dev
 ```
 
+For normal use, build the standalone application then start the **release**
+executable. Do not start `target/debug/adaptive-harness-desktop.exe` directly:
+that debug binary intentionally expects the development server on port 1420 and
+otherwise displays a browser error saying that localhost refused the connection.
+
+```text
+cd apps/desktop
+npm run tauri -- build --no-bundle
+src-tauri/target/release/adaptive-harness-desktop.exe
+```
+
 Build verification completed on Windows 11:
 
 ```text
-npm run build                 PASS
-npm run tauri build -- --debug PASS
+npm run build                         PASS
+npm run tauri -- build --no-bundle    PASS
 ```
 
 Artifacts generated locally:
 
 ```text
-apps/desktop/src-tauri/target/debug/adaptive-harness-desktop.exe
-apps/desktop/src-tauri/target/debug/bundle/msi/
-apps/desktop/src-tauri/target/debug/bundle/nsis/
+apps/desktop/src-tauri/target/release/adaptive-harness-desktop.exe
 ```
 
 ## Current limits

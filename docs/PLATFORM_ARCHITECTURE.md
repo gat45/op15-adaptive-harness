@@ -36,7 +36,7 @@ that a backend works.
 | Rust controller | implemented and tested on host | shared by both applications |
 | claim-bound verifier | implemented and tested | typed oracles and artifact criteria |
 | event journal | in-memory causal trace only | durable, queryable event journal |
-| desktop UI | not implemented | Tauri/React consumes real events |
+| desktop UI | Tauri/React application runs the shared loop against local llama.cpp | add streaming, cancellation and additional observable adapters |
 | Android JNI | not implemented | arm64-v8a library with narrow JNI API |
 | Android UI | not implemented | Compose consumes real events |
 | local LLM on Android | not implemented in this repository | llama.cpp service with lifecycle handling |
