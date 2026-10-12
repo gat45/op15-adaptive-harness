@@ -67,6 +67,15 @@ struct MemoryStatus {
     indexed_projects: Option<String>,
 }
 #[derive(Serialize)]
+struct ProfilerStatus {
+    metrics_available: bool,
+    metrics_message: String,
+    gpu_name: Option<String>,
+    gpu_utilization_percent: Option<String>,
+    gpu_vram_used_mb: Option<String>,
+    gpu_vram_total_mb: Option<String>,
+}
+#[derive(Serialize)]
 struct LongTermMemoryView { id: String, kind: String, verification: String, observed_at_ms: u128, content: String }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -192,6 +201,45 @@ fn memory_status() -> MemoryStatus {
             indexed_projects: None,
         },
     }
+}
+#[tauri::command]
+fn start_memory_mcp(executable_path: String, port: Option<u16>) -> Result<String, String> {
+    let executable = PathBuf::from(executable_path.trim());
+    if !executable.is_file() {
+        return Err("L'exécutable Codebase Memory MCP est introuvable. Choisis son fichier .exe.".into());
+    }
+    let port = port.unwrap_or(MEMORY_PORT);
+    if tcp_reachable(MEMORY_HOST, port) {
+        return Ok(format!("Codebase Memory MCP est déjà accessible sur le port {port}."));
+    }
+    Command::new(&executable)
+        .args(["--ui=true", &format!("--port={port}")])
+        .spawn()
+        .map_err(|e| format!("démarrage MCP: {e}"))?;
+    Ok(format!("Démarrage de Codebase Memory MCP demandé sur le port {port}."))
+}
+fn nvidia_smi() -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+    let Ok(output) = Command::new("nvidia-smi")
+        .args(["--query-gpu=name,utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"])
+        .output()
+    else { return (None, None, None, None); };
+    if !output.status.success() { return (None, None, None, None); }
+    let rendered = String::from_utf8_lossy(&output.stdout);
+    let line = rendered.lines().next().unwrap_or("");
+    let parts = line.split(',').map(str::trim).collect::<Vec<_>>();
+    if parts.len() != 4 { return (None, None, None, None); }
+    (Some(parts[0].to_owned()), Some(parts[1].to_owned()), Some(parts[2].to_owned()), Some(parts[3].to_owned()))
+}
+#[tauri::command]
+fn profiler_status(port: Option<u16>) -> ProfilerStatus {
+    let port = port.unwrap_or(8080);
+    let (metrics_available, metrics_message) = match http_request("GET", "127.0.0.1", port, "/metrics", None) {
+        Ok(_) => (true, format!("Métriques Prometheus accessibles sur le port {port}.")),
+        Err(error) if error.contains("501") || error.contains("Not Implemented") => (false, format!("Le serveur sur le port {port} ne fournit pas /metrics (HTTP 501).")),
+        Err(_) => (false, format!("Aucune métrique compatible n'est exposée par le serveur sur le port {port}.")),
+    };
+    let (gpu_name, gpu_utilization_percent, gpu_vram_used_mb, gpu_vram_total_mb) = nvidia_smi();
+    ProfilerStatus { metrics_available, metrics_message, gpu_name, gpu_utilization_percent, gpu_vram_used_mb, gpu_vram_total_mb }
 }
 fn escape_json(value: &str) -> String {
     value
@@ -450,6 +498,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             harness_status,
             memory_status,
+            start_memory_mcp,
+            profiler_status,
             memory_index_project,
             list_long_term_memory,
             add_long_term_memory,

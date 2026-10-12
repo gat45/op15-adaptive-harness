@@ -3,22 +3,765 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
-type Status={controller_ready:boolean;llama_endpoint:string;llama_reachable:boolean;verification_rule:string;voice_state:string};
-type TaskResult={decision:string;observation:string;model_error:string|null;trace_events:number;independently_verified:boolean;elapsed_ms:number;interaction_mode:string;reasoning_lenses:string};
-type LauncherStatus={file_exists:boolean;llama_reachable:boolean;message:string};
-type MemoryStatus={reachable:boolean;dashboard_url:string;message:string;rss_mb:string|null;indexed_projects:string|null};
-type Config={gguf_path:string;server_path:string;model_name:string;model_folder:string;context_size:number;gpu_layers:number;port:number;threads:number;parallel:number;batch_size:number;ubatch_size:number;cache_type:string;flash_attention:boolean;mtp_enabled:boolean;mtp_n_max:number;server_metrics:boolean};
-type Turn={role:string;text:string};
-type LongTermMemory={id:string;kind:string;verification:string;observed_at_ms:number;content:string};
-const pages=["Chat","Agent","Memoire","Outils MCP","Modeles","Profiler","Benchmarks","Parametres"] as const; type Page=typeof pages[number];
-const blank:Config={gguf_path:"",server_path:"",model_name:"local",model_folder:"",context_size:32768,gpu_layers:999,port:18181,threads:8,parallel:1,batch_size:2048,ubatch_size:512,cache_type:"q8_0",flash_attention:true,mtp_enabled:true,mtp_n_max:2,server_metrics:true};
-const memoryKey="adaptive-harness-chat-v1";
-function Notice({children,kind="info"}:{children:React.ReactNode;kind?:"info"|"ok"|"error"}){return <p className={`notice ${kind}`}>{children}</p>}
+type Status = {
+  controller_ready: boolean;
+  llama_endpoint: string;
+  llama_reachable: boolean;
+  verification_rule: string;
+  voice_state: string;
+};
+type TaskResult = {
+  decision: string;
+  observation: string;
+  model_error: string | null;
+  trace_events: number;
+  independently_verified: boolean;
+  elapsed_ms: number;
+  interaction_mode: string;
+  reasoning_lenses: string;
+};
+type LauncherStatus = {
+  file_exists: boolean;
+  llama_reachable: boolean;
+  message: string;
+};
+type MemoryStatus = {
+  reachable: boolean;
+  dashboard_url: string;
+  message: string;
+  rss_mb: string | null;
+  indexed_projects: string | null;
+};
+type ProfilerStatus = {
+  metrics_available: boolean;
+  metrics_message: string;
+  gpu_name: string | null;
+  gpu_utilization_percent: string | null;
+  gpu_vram_used_mb: string | null;
+  gpu_vram_total_mb: string | null;
+};
+type Config = {
+  gguf_path: string;
+  server_path: string;
+  model_name: string;
+  model_folder: string;
+  context_size: number;
+  gpu_layers: number;
+  port: number;
+  threads: number;
+  parallel: number;
+  batch_size: number;
+  ubatch_size: number;
+  cache_type: string;
+  flash_attention: boolean;
+  mtp_enabled: boolean;
+  mtp_n_max: number;
+  server_metrics: boolean;
+};
+type Turn = { role: string; text: string };
+type LongTermMemory = {
+  id: string;
+  kind: string;
+  verification: string;
+  observed_at_ms: number;
+  content: string;
+};
+const pages = [
+  "Chat",
+  "Agent",
+  "Memoire",
+  "Outils MCP",
+  "Modeles",
+  "Profiler",
+  "Benchmarks",
+  "Parametres",
+] as const;
+type Page = (typeof pages)[number];
+const blank: Config = {
+  gguf_path: "",
+  server_path: "",
+  model_name: "local",
+  model_folder: "",
+  context_size: 32768,
+  gpu_layers: 999,
+  port: 18181,
+  threads: 8,
+  parallel: 1,
+  batch_size: 2048,
+  ubatch_size: 512,
+  cache_type: "q8_0",
+  flash_attention: true,
+  mtp_enabled: true,
+  mtp_n_max: 2,
+  server_metrics: true,
+};
+const memoryKey = "adaptive-harness-chat-v1";
+function Notice({
+  children,
+  kind = "info",
+}: {
+  children: React.ReactNode;
+  kind?: "info" | "ok" | "error";
+}) {
+  return <p className={`notice ${kind}`}>{children}</p>;
+}
 
-function Models({config,setConfig,refresh}:{config:Config;setConfig:(x:Config)=>void;refresh:()=>void}){const[s,setS]=useState<LauncherStatus|null>(null),[models,setModels]=useState<string[]>([]),[msg,setMsg]=useState("");const inspect=()=>invoke<LauncherStatus>("launcher_status").then(setS).catch(e=>setMsg(String(e)));const save=async()=>{const x=await invoke<Config>("save_desktop_config",{config});setConfig(x);return x};const chooseFolder=async()=>{const x=await open({directory:true,multiple:false,title:"Choisir le dossier GGUF"});if(typeof x==="string")setConfig({...config,model_folder:x})};const chooseModel=async()=>{const x=await open({multiple:false,title:"Choisir le modèle GGUF",filters:[{name:"GGUF",extensions:["gguf"]}]});if(typeof x==="string")setConfig({...config,gguf_path:x})};const scan=async()=>{try{const x=await invoke<string[]>("list_gguf",{folder:config.model_folder});setModels(x);setMsg(x.length?`${x.length} modèle(s) trouvé(s).`:"Aucun GGUF trouvé.")}catch(e){setMsg(String(e))}};const start=async()=>{try{const x=await save(),pid=await invoke<number>("start_configured_server",{config:x});setMsg(`Serveur démarré (PID ${pid}).`);setTimeout(()=>{inspect();refresh()},1400)}catch(e){setMsg(String(e))}};useEffect(()=>{inspect()},[]);return <article><p className="role">MODELES LOCAUX</p><h2>Serveur et modèle GGUF</h2><label>Dossier GGUF<input value={config.model_folder} onChange={e=>setConfig({...config,model_folder:e.target.value})}/></label><div className="actions"><button onClick={chooseFolder}>Parcourir le dossier</button><button onClick={scan}>Rechercher</button></div>{models.length>0&&<label>Modèles détectés<select value={config.gguf_path} onChange={e=>setConfig({...config,gguf_path:e.target.value})}><option value="">Choisir</option>{models.map(x=><option key={x} value={x}>{x}</option>)}</select></label>}<label>GGUF sélectionné<input value={config.gguf_path} onChange={e=>setConfig({...config,gguf_path:e.target.value})}/></label><div className="actions"><button onClick={chooseModel}>Parcourir un GGUF</button><button onClick={()=>save().then(()=>setMsg("Configuration enregistrée."))}>Enregistrer</button><button className="primary" onClick={start} disabled={s?.llama_reachable}>Démarrer le serveur</button></div><Notice kind={s?.llama_reachable?"ok":"info"}>{msg||s?.message||"Vérification…"}</Notice></article>}
+function Models({
+  config,
+  setConfig,
+  refresh,
+}: {
+  config: Config;
+  setConfig: (x: Config) => void;
+  refresh: () => void;
+}) {
+  const [s, setS] = useState<LauncherStatus | null>(null),
+    [models, setModels] = useState<string[]>([]),
+    [msg, setMsg] = useState("");
+  const inspect = () =>
+    invoke<LauncherStatus>("launcher_status")
+      .then(setS)
+      .catch((e) => setMsg(String(e)));
+  const save = async () => {
+    const x = await invoke<Config>("save_desktop_config", { config });
+    setConfig(x);
+    return x;
+  };
+  const chooseFolder = async () => {
+    const x = await open({
+      directory: true,
+      multiple: false,
+      title: "Choisir le dossier GGUF",
+    });
+    if (typeof x === "string") setConfig({ ...config, model_folder: x });
+  };
+  const chooseModel = async () => {
+    const x = await open({
+      multiple: false,
+      title: "Choisir le modèle GGUF",
+      filters: [{ name: "GGUF", extensions: ["gguf"] }],
+    });
+    if (typeof x === "string") setConfig({ ...config, gguf_path: x });
+  };
+  const scan = async () => {
+    try {
+      const x = await invoke<string[]>("list_gguf", {
+        folder: config.model_folder,
+      });
+      setModels(x);
+      setMsg(
+        x.length ? `${x.length} modèle(s) trouvé(s).` : "Aucun GGUF trouvé.",
+      );
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+  const start = async () => {
+    try {
+      const x = await save(),
+        pid = await invoke<number>("start_configured_server", { config: x });
+      setMsg(`Serveur démarré (PID ${pid}).`);
+      setTimeout(() => {
+        inspect();
+        refresh();
+      }, 1400);
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+  useEffect(() => {
+    inspect();
+  }, []);
+  return (
+    <article>
+      <p className="role">MODELES LOCAUX</p>
+      <h2>Serveur et modèle GGUF</h2>
+      <label>
+        Dossier GGUF
+        <input
+          value={config.model_folder}
+          onChange={(e) =>
+            setConfig({ ...config, model_folder: e.target.value })
+          }
+        />
+      </label>
+      <div className="actions">
+        <button onClick={chooseFolder}>Parcourir le dossier</button>
+        <button onClick={scan}>Rechercher</button>
+      </div>
+      {models.length > 0 && (
+        <label>
+          Modèles détectés
+          <select
+            value={config.gguf_path}
+            onChange={(e) =>
+              setConfig({ ...config, gguf_path: e.target.value })
+            }
+          >
+            <option value="">Choisir</option>
+            {models.map((x) => (
+              <option key={x} value={x}>
+                {x}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label>
+        GGUF sélectionné
+        <input
+          value={config.gguf_path}
+          onChange={(e) => setConfig({ ...config, gguf_path: e.target.value })}
+        />
+      </label>
+      <div className="actions">
+        <button onClick={chooseModel}>Parcourir un GGUF</button>
+        <button
+          onClick={() =>
+            save().then(() => setMsg("Configuration enregistrée."))
+          }
+        >
+          Enregistrer
+        </button>
+        <button
+          className="primary"
+          onClick={start}
+          disabled={s?.llama_reachable}
+        >
+          Démarrer le serveur
+        </button>
+      </div>
+      <Notice kind={s?.llama_reachable ? "ok" : "info"}>
+        {msg || s?.message || "Vérification…"}
+      </Notice>
+    </article>
+  );
+}
 
-function Memory({tools}:{tools?:boolean}){const[s,setS]=useState<MemoryStatus|null>(null),[root,setRoot]=useState("D:\\op15-adaptive-harness"),[name,setName]=useState("op15-adaptive-harness"),[msg,setMsg]=useState(""),[records,setRecords]=useState<LongTermMemory[]>([]),[content,setContent]=useState(""),[kind,setKind]=useState("semantic");const refresh=()=>invoke<MemoryStatus>("memory_status").then(setS).catch(e=>setMsg(String(e)));const refreshLongTerm=()=>invoke<LongTermMemory[]>("list_long_term_memory").then(setRecords).catch(e=>setMsg(String(e)));const index=async()=>{try{setMsg(await invoke<string>("memory_index_project",{rootPath:root,projectName:name}));refresh()}catch(e){setMsg(String(e))}};const add=async()=>{try{await invoke("add_long_term_memory",{kind,content});setContent("");setMsg("Souvenir ajouté avec provenance « déclaré par l’utilisateur ».");refreshLongTerm()}catch(e){setMsg(String(e))}};const forget=async(id:string)=>{try{await invoke("forget_long_term_memory",{id});setMsg("Souvenir retiré : le journal conserve le tombstone pour l’audit.");refreshLongTerm()}catch(e){setMsg(String(e))}};useEffect(()=>{refresh();refreshLongTerm()},[]);if(tools)return <article><p className="role">OUTIL MCP CONNECTE</p><h2>Codebase Memory MCP</h2><dl className="metrics"><dt>Connexion</dt><dd className={s?.reachable?"ok-text":"error-text"}>{s?.reachable?"accessible":"indisponible"}</dd><dt>RAM service</dt><dd>{s?.rss_mb?`${s.rss_mb} Mo`:"non remontée"}</dd><dt>Projets indexés</dt><dd>{s?.indexed_projects??"non remonté"}</dd></dl><div className="actions"><button onClick={refresh}>Actualiser</button>{s?.reachable&&<a href={s.dashboard_url} target="_blank" rel="noreferrer">Tableau de bord</a>}</div><fieldset disabled={!s?.reachable}><legend>Indexer un projet</legend><label>Dossier<input value={root} onChange={e=>setRoot(e.target.value)}/></label><label>Nom<input value={name} onChange={e=>setName(e.target.value)}/></label><button onClick={index}>Indexer</button></fieldset><Notice>{msg||s?.message||"Vérification…"}</Notice></article>;return <article><p className="role">MEMOIRE LONGUE DUREE</p><h2>Souvenirs explicites</h2><Notice>Seuls les souvenirs ajoutés ici persistent et peuvent être récupérés dans le chat. Aucun message n’est mémorisé automatiquement.</Notice><label>Type<select value={kind} onChange={e=>setKind(e.target.value)}><option value="semantic">Préférence ou fait déclaré</option><option value="episodic">Épisode</option><option value="procedural">Procédure</option></select></label><label>Souvenir<textarea value={content} placeholder="Ex. L’utilisateur préfère des réponses en français." onChange={e=>setContent(e.target.value)}/></label><button className="primary" onClick={add} disabled={!content.trim()}>Mémoriser explicitement</button><div className="memory-list">{records.length===0?<p className="rule">Aucun souvenir persistant.</p>:records.map(record=><div key={record.id} className="turn assistant"><p className="role">{record.kind} · {record.verification}</p><pre>{record.content}</pre><button onClick={()=>forget(record.id)}>Oublier</button></div>)}</div>{msg&&<Notice>{msg}</Notice>}</article>}
+function Memory({ tools }: { tools?: boolean }) {
+  const [s, setS] = useState<MemoryStatus | null>(null),
+    [root, setRoot] = useState("D:\\op15-adaptive-harness"),
+    [name, setName] = useState("op15-adaptive-harness"),
+    [mcpPath, setMcpPath] = useState("F:\\soos\\plugins\\codebase-memory-mcp.exe"),
+    [msg, setMsg] = useState(""),
+    [records, setRecords] = useState<LongTermMemory[]>([]),
+    [content, setContent] = useState(""),
+    [kind, setKind] = useState("semantic");
+  const refresh = () =>
+    invoke<MemoryStatus>("memory_status")
+      .then(setS)
+      .catch((e) => setMsg(String(e)));
+  const refreshLongTerm = () =>
+    invoke<LongTermMemory[]>("list_long_term_memory")
+      .then(setRecords)
+      .catch((e) => setMsg(String(e)));
+  const index = async () => {
+    try {
+      setMsg(
+        await invoke<string>("memory_index_project", {
+          rootPath: root,
+          projectName: name,
+        }),
+      );
+      refresh();
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+  const startMcp = async () => {
+    try {
+      setMsg(
+        await invoke<string>("start_memory_mcp", {
+          executablePath: mcpPath,
+          port: 9749,
+        }),
+      );
+      setTimeout(refresh, 1600);
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+  const chooseMcp = async () => {
+    const value = await open({
+      multiple: false,
+      title: "Choisir Codebase Memory MCP",
+      filters: [{ name: "Exécutable", extensions: ["exe"] }],
+    });
+    if (typeof value === "string") setMcpPath(value);
+  };
+  const add = async () => {
+    try {
+      await invoke("add_long_term_memory", { kind, content });
+      setContent("");
+      setMsg("Souvenir ajouté avec provenance « déclaré par l’utilisateur ».");
+      refreshLongTerm();
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+  const forget = async (id: string) => {
+    try {
+      await invoke("forget_long_term_memory", { id });
+      setMsg(
+        "Souvenir retiré : le journal conserve le tombstone pour l’audit.",
+      );
+      refreshLongTerm();
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+  useEffect(() => {
+    refresh();
+    refreshLongTerm();
+  }, []);
+  if (tools)
+    return (
+      <article>
+        <p className="role">OUTIL MCP CONNECTE</p>
+        <h2>Codebase Memory MCP</h2>
+        <dl className="metrics">
+          <dt>Connexion</dt>
+          <dd className={s?.reachable ? "ok-text" : "error-text"}>
+            {s?.reachable ? "accessible" : "indisponible"}
+          </dd>
+          <dt>RAM service</dt>
+          <dd>{s?.rss_mb ? `${s.rss_mb} Mo` : "non remontée"}</dd>
+          <dt>Projets indexés</dt>
+          <dd>{s?.indexed_projects ?? "non remonté"}</dd>
+        </dl>
+        <div className="actions">
+          <button onClick={refresh}>Actualiser</button>
+          {s?.reachable && (
+            <a href={s.dashboard_url} target="_blank" rel="noreferrer">
+              Tableau de bord
+            </a>
+          )}
+        </div>
+        {!s?.reachable && (
+          <fieldset>
+            <legend>Démarrer le service local</legend>
+            <label>
+              Codebase Memory MCP
+              <input
+                value={mcpPath}
+                onChange={(e) => setMcpPath(e.target.value)}
+              />
+            </label>
+            <div className="actions">
+              <button onClick={chooseMcp}>Parcourir</button>
+              <button className="primary" onClick={startMcp}>
+                Démarrer MCP
+              </button>
+            </div>
+          </fieldset>
+        )}
+        <fieldset disabled={!s?.reachable}>
+          <legend>Indexer un projet</legend>
+          <label>
+            Dossier
+            <input value={root} onChange={(e) => setRoot(e.target.value)} />
+          </label>
+          <label>
+            Nom
+            <input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <button onClick={index}>Indexer</button>
+        </fieldset>
+        <Notice>{msg || s?.message || "Vérification…"}</Notice>
+      </article>
+    );
+  return (
+    <article>
+      <p className="role">MEMOIRE LONGUE DUREE</p>
+      <h2>Souvenirs explicites</h2>
+      <Notice>
+        Seuls les souvenirs ajoutés ici persistent et peuvent être récupérés
+        dans le chat. Aucun message n’est mémorisé automatiquement.
+      </Notice>
+      <label>
+        Type
+        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="semantic">Préférence ou fait déclaré</option>
+          <option value="episodic">Épisode</option>
+          <option value="procedural">Procédure</option>
+        </select>
+      </label>
+      <label>
+        Souvenir
+        <textarea
+          value={content}
+          placeholder="Ex. L’utilisateur préfère des réponses en français."
+          onChange={(e) => setContent(e.target.value)}
+        />
+      </label>
+      <button className="primary" onClick={add} disabled={!content.trim()}>
+        Mémoriser explicitement
+      </button>
+      <div className="memory-list">
+        {records.length === 0 ? (
+          <p className="rule">Aucun souvenir persistant.</p>
+        ) : (
+          records.map((record) => (
+            <div key={record.id} className="turn assistant">
+              <p className="role">
+                {record.kind} · {record.verification}
+              </p>
+              <pre>{record.content}</pre>
+              <button onClick={() => forget(record.id)}>Oublier</button>
+            </div>
+          ))
+        )}
+      </div>
+      {msg && <Notice>{msg}</Notice>}
+    </article>
+  );
+}
 
-function Settings({config,setConfig}:{config:Config;setConfig:(x:Config)=>void}){const[msg,setMsg]=useState("");const browse=async()=>{const x=await open({multiple:false,title:"Choisir llama-server.exe",filters:[{name:"Exécutable",extensions:["exe"]}]});if(typeof x==="string")setConfig({...config,server_path:x})};const preset=()=>setConfig({...config,gguf_path:"D:\\qwen9b_IQ4NL_owIQ4NL.gguf",server_path:"F:\\lama-tensorRT 1050-5070\\llama-server.exe",model_folder:"D:\\",model_name:"qwen9b_IQ4NL_owIQ4NL.gguf",port:18181,context_size:32768,gpu_layers:999,threads:8,parallel:1,batch_size:2048,ubatch_size:512,cache_type:"q8_0",flash_attention:true,mtp_enabled:true,mtp_n_max:2,server_metrics:true});const save=async()=>{try{setConfig(await invoke<Config>("save_desktop_config",{config}));setMsg("Configuration enregistrée.")}catch(e){setMsg(String(e))}};return <article><p className="role">PARAMETRES D’EXECUTION</p><button onClick={preset}>Appliquer le profil GTX 1080 validé</button><label>llama-server.exe<input value={config.server_path} onChange={e=>setConfig({...config,server_path:e.target.value})}/><button onClick={browse}>Parcourir llama-server.exe</button></label><div className="settings-grid"><label>Port<input type="number" value={config.port} onChange={e=>setConfig({...config,port:Number(e.target.value)})}/></label><label>Contexte<input type="number" value={config.context_size} onChange={e=>setConfig({...config,context_size:Number(e.target.value)})}/></label><label>Couches GPU<input type="number" value={config.gpu_layers} onChange={e=>setConfig({...config,gpu_layers:Number(e.target.value)})}/></label></div><p className="rule">KV {config.cache_type}, Flash Attention {config.flash_attention?"on":"off"}, MTP {config.mtp_enabled?`on n_max=${config.mtp_n_max}`:"off"}.</p><button className="primary" onClick={save}>Enregistrer</button>{msg&&<Notice kind="ok">{msg}</Notice>}</article>}
+function Settings({
+  config,
+  setConfig,
+}: {
+  config: Config;
+  setConfig: (x: Config) => void;
+}) {
+  const [msg, setMsg] = useState("");
+  const browse = async () => {
+    const x = await open({
+      multiple: false,
+      title: "Choisir llama-server.exe",
+      filters: [{ name: "Exécutable", extensions: ["exe"] }],
+    });
+    if (typeof x === "string") setConfig({ ...config, server_path: x });
+  };
+  const preset = () =>
+    setConfig({
+      ...config,
+      gguf_path: "D:\\qwen9b_IQ4NL_owIQ4NL.gguf",
+      server_path: "F:\\lama-tensorRT 1050-5070\\llama-server.exe",
+      model_folder: "D:\\",
+      model_name: "qwen9b_IQ4NL_owIQ4NL.gguf",
+      port: 18181,
+      context_size: 32768,
+      gpu_layers: 999,
+      threads: 8,
+      parallel: 1,
+      batch_size: 2048,
+      ubatch_size: 512,
+      cache_type: "q8_0",
+      flash_attention: true,
+      mtp_enabled: true,
+      mtp_n_max: 2,
+      server_metrics: true,
+    });
+  const save = async () => {
+    try {
+      setConfig(await invoke<Config>("save_desktop_config", { config }));
+      setMsg("Configuration enregistrée.");
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+  return (
+    <article>
+      <p className="role">PARAMETRES D’EXECUTION</p>
+      <button onClick={preset}>Appliquer le profil GTX 1080 validé</button>
+      <label>
+        llama-server.exe
+        <input
+          value={config.server_path}
+          onChange={(e) =>
+            setConfig({ ...config, server_path: e.target.value })
+          }
+        />
+        <button onClick={browse}>Parcourir llama-server.exe</button>
+      </label>
+      <div className="settings-grid">
+        <label>
+          Port
+          <input
+            type="number"
+            value={config.port}
+            onChange={(e) =>
+              setConfig({ ...config, port: Number(e.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Contexte
+          <input
+            type="number"
+            value={config.context_size}
+            onChange={(e) =>
+              setConfig({ ...config, context_size: Number(e.target.value) })
+            }
+          />
+        </label>
+        <label>
+          Couches GPU
+          <input
+            type="number"
+            value={config.gpu_layers}
+            onChange={(e) =>
+              setConfig({ ...config, gpu_layers: Number(e.target.value) })
+            }
+          />
+        </label>
+      </div>
+      <p className="rule">
+        KV {config.cache_type}, Flash Attention{" "}
+        {config.flash_attention ? "on" : "off"}, MTP{" "}
+        {config.mtp_enabled ? `on n_max=${config.mtp_n_max}` : "off"}.
+      </p>
+      <button className="primary" onClick={save}>
+        Enregistrer
+      </button>
+      {msg && <Notice kind="ok">{msg}</Notice>}
+    </article>
+  );
+}
 
-export default function App(){const[status,setStatus]=useState<Status|null>(null),[config,setConfig]=useState<Config>(blank),[page,setPage]=useState<Page>("Chat"),[prompt,setPrompt]=useState(""),[turns,setTurns]=useState<Turn[]>([]),[result,setResult]=useState<TaskResult|null>(null),[error,setError]=useState(""),[running,setRunning]=useState(false);const refresh=()=>invoke<Status>("harness_status",{port:config.port||8080}).then(setStatus).catch(e=>setError(String(e)));useEffect(()=>{invoke<Config>("load_desktop_config").then(setConfig).catch(()=>setConfig(blank));try{const saved=localStorage.getItem(memoryKey);if(saved)setTurns(JSON.parse(saved))}catch{}},[]);useEffect(()=>{refresh()},[config.port]);useEffect(()=>{localStorage.setItem(memoryKey,JSON.stringify(turns.slice(-20)))},[turns]);const clear=()=>{setTurns([]);localStorage.removeItem(memoryKey)};const submit=async(e:FormEvent)=>{e.preventDefault();const text=prompt.trim();if(!text)return;setRunning(true);setError("");const context=turns.slice(-12).map(t=>`${t.role==="user"?"Utilisateur":"Assistant"}: ${t.text}`).join("\n");const request=context?`Historique récent :\n${context}\n\nNouvelle demande de l'utilisateur : ${text}`:text;try{const response=await invoke<TaskResult>("run_task",{prompt:request,model:config.model_name,port:config.port||8080});setResult(response);if(response.observation)setTurns(old=>[...old,{role:"user",text},{role:"assistant",text:response.observation}].slice(-20));}catch(x){setError(String(x))}finally{setPrompt("");setRunning(false);refresh()}};const chat=<><article>{turns.length===0&&<Notice>La mémoire conversationnelle est vide. Les prochains tours seront conservés localement dans cette interface.</Notice>}{turns.map((t,i)=><div key={i} className={`turn ${t.role}`}><p className="role">{t.role==="user"?"UTILISATEUR":"ADAPTIVE HARNESS — NON VERIFIE"}</p><pre>{t.text}</pre></div>)}{result?.model_error&&<Notice kind="error">Erreur llama.cpp : {result.model_error}</Notice>}{error&&<Notice kind="error">{error}</Notice>}</article><form onSubmit={submit}><textarea aria-label="Demande" value={prompt} placeholder="Écris normalement : le contexte récent est conservé." onChange={e=>setPrompt(e.target.value)}/><button type="button" onClick={clear}>Effacer mémoire</button><button className="primary" disabled={running||!status?.llama_reachable}>{running?"Réponse…":"Envoyer"}</button></form></>;const agent=<article><p className="role">CONTROLEUR</p><dl className="metrics"><dt>Décision</dt><dd>{result?.decision??"aucune"}</dd><dt>Compréhension du tour</dt><dd>{result?.interaction_mode??"aucune"}</dd><dt>Trace</dt><dd>{result?`${result.trace_events} événement(s)`:"aucune"}</dd><dt>Oracle</dt><dd>{result?.independently_verified?"validé":"non configuré"}</dd></dl><p className="rule">{status?.verification_rule}</p></article>;const profiler=<article><p className="role">PROFILER</p><dl className="metrics"><dt>Dernière exécution</dt><dd>{result?`${result.elapsed_ms} ms`:"aucune"}</dd><dt>TTFT / tok/s</dt><dd>non exposés par le serveur 8080 actuel : <code>/metrics</code> répond 501</dd><dt>CPU / GPU / VRAM</dt><dd>non télémetrés par ce serveur</dd></dl><p className="rule">Le profil GTX 1080 active <code>--metrics</code> au démarrage sur le port 18181.</p></article>;const bench=<article><p className="role">BENCHMARKS</p><p>Le modèle actif sur 8080 est distinct du Qwen 9B validé. Les résultats GTX 1080 ne lui sont pas attribués.</p><button onClick={()=>setPage("Chat")}>Tester le chat</button></article>;let content:React.ReactNode=chat;if(page==="Agent")content=agent;if(page==="Memoire")content=<Memory/>;if(page==="Outils MCP")content=<Memory tools/>;if(page==="Modeles")content=<Models config={config} setConfig={setConfig} refresh={refresh}/>;if(page==="Profiler")content=profiler;if(page==="Benchmarks")content=bench;if(page==="Parametres")content=<Settings config={config} setConfig={setConfig}/>;return <main><aside><h1>ADAPTIVE<br/>HARNESS</h1><nav>{pages.map(x=><button key={x} className={x===page?"active":""} onClick={()=>setPage(x)}>{x}</button>)}</nav></aside><section className="conversation"><header><div><strong>{page==="Chat"?"Conversation locale":page}</strong><small>{status?.llama_endpoint??"Connexion…"}</small></div><span className={status?.llama_reachable?"badge online":"badge"}>{status?.llama_reachable?"llama.cpp connecté":"modèle arrêté"}</span></header>{content}</section><aside className="inspector"><h2>ETAT</h2><dl><dt>Contrôleur</dt><dd>{status?.controller_ready?"prêt":"inconnu"}</dd><dt>llama.cpp</dt><dd>{status?.llama_reachable?"accessible":"indisponible"}</dd><dt>Mémoire chat</dt><dd>{turns.length} tour(s)</dd></dl><button onClick={refresh}>Actualiser</button></aside><footer>Exécution locale · durée : {result?`${result.elapsed_ms} ms`:"aucune"} · GPU/VRAM : non télémetrés · TTFT/tok/s : non mesurés</footer></main>}
+function Profiler({ port, elapsedMs }: { port: number; elapsedMs: number | null }) {
+  const [status, setStatus] = useState<ProfilerStatus | null>(null);
+  const refresh = () =>
+    invoke<ProfilerStatus>("profiler_status", { port })
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  useEffect(() => {
+    refresh();
+  }, [port]);
+  const gpu = status?.gpu_utilization_percent && status.gpu_vram_used_mb && status.gpu_vram_total_mb
+    ? `${status.gpu_utilization_percent}% · ${status.gpu_vram_used_mb} / ${status.gpu_vram_total_mb} Mo`
+    : "non remontée";
+  return (
+    <article>
+      <p className="role">PROFILER</p>
+      <dl className="metrics">
+        <dt>Dernière exécution</dt>
+        <dd>{elapsedMs ? `${elapsedMs} ms` : "aucune"}</dd>
+        <dt>TTFT / tok/s</dt>
+        <dd>{status?.metrics_available ? "Métriques disponibles ; export détaillé à raccorder." : status?.metrics_message ?? "Vérification…"}</dd>
+        <dt>GPU détecté</dt>
+        <dd>{status?.gpu_name ?? "nvidia-smi indisponible"}</dd>
+        <dt>GPU / VRAM globale</dt>
+        <dd>{gpu}</dd>
+      </dl>
+      <div className="actions"><button onClick={refresh}>Actualiser</button></div>
+      <p className="rule">La télémétrie GPU est celle de la machine entière. Elle ne prouve pas, à elle seule, l’usage du modèle. Le profil GTX 1080 lance llama.cpp avec <code>--metrics</code> sur le port 18181.</p>
+    </article>
+  );
+}
+
+export default function App() {
+  const [status, setStatus] = useState<Status | null>(null),
+    [config, setConfig] = useState<Config>(blank),
+    [page, setPage] = useState<Page>("Chat"),
+    [prompt, setPrompt] = useState(""),
+    [turns, setTurns] = useState<Turn[]>([]),
+    [result, setResult] = useState<TaskResult | null>(null),
+    [error, setError] = useState(""),
+    [running, setRunning] = useState(false);
+  const refresh = () =>
+    invoke<Status>("harness_status", { port: config.port || 8080 })
+      .then(setStatus)
+      .catch((e) => setError(String(e)));
+  useEffect(() => {
+    invoke<Config>("load_desktop_config")
+      .then(setConfig)
+      .catch(() => setConfig(blank));
+    try {
+      const saved = localStorage.getItem(memoryKey);
+      if (saved) setTurns(JSON.parse(saved));
+    } catch {}
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [config.port]);
+  useEffect(() => {
+    localStorage.setItem(memoryKey, JSON.stringify(turns.slice(-20)));
+  }, [turns]);
+  const clear = () => {
+    setTurns([]);
+    localStorage.removeItem(memoryKey);
+  };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const text = prompt.trim();
+    if (!text) return;
+    setRunning(true);
+    setError("");
+    const context = turns
+      .slice(-12)
+      .map(
+        (t) => `${t.role === "user" ? "Utilisateur" : "Assistant"}: ${t.text}`,
+      )
+      .join("\n");
+    const request = context
+      ? `Historique récent :\n${context}\n\nNouvelle demande de l'utilisateur : ${text}`
+      : text;
+    try {
+      const response = await invoke<TaskResult>("run_task", {
+        prompt: request,
+        model: config.model_name,
+        port: config.port || 8080,
+      });
+      setResult(response);
+      if (response.observation)
+        setTurns((old) =>
+          [
+            ...old,
+            { role: "user", text },
+            { role: "assistant", text: response.observation },
+          ].slice(-20),
+        );
+    } catch (x) {
+      setError(String(x));
+    } finally {
+      setPrompt("");
+      setRunning(false);
+      refresh();
+    }
+  };
+  const chat = (
+    <>
+      <article>
+        {turns.length === 0 && (
+          <Notice>
+            La mémoire conversationnelle est vide. Les prochains tours seront
+            conservés localement dans cette interface.
+          </Notice>
+        )}
+        {turns.map((t, i) => (
+          <div key={i} className={`turn ${t.role}`}>
+            <p className="role">
+              {t.role === "user"
+                ? "UTILISATEUR"
+                : "ADAPTIVE HARNESS — NON VERIFIE"}
+            </p>
+            <pre>{t.text}</pre>
+          </div>
+        ))}
+        {result?.model_error && (
+          <Notice kind="error">Erreur llama.cpp : {result.model_error}</Notice>
+        )}
+        {error && <Notice kind="error">{error}</Notice>}
+      </article>
+      <form onSubmit={submit}>
+        <textarea
+          aria-label="Demande"
+          value={prompt}
+          placeholder="Écris normalement : le contexte récent est conservé."
+          onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (!running && status?.llama_reachable && prompt.trim()) {
+                  void submit(event as unknown as FormEvent);
+                }
+              }
+            }}
+        />
+        <button type="button" onClick={clear}>
+          Effacer mémoire
+        </button>
+        <button
+          className="primary"
+          disabled={running || !status?.llama_reachable}
+        >
+          {running ? "Réponse…" : "Envoyer"}
+        </button>
+      </form>
+    </>
+  );
+  const agent = (
+    <article>
+      <p className="role">CONTROLEUR</p>
+      <dl className="metrics">
+        <dt>Décision</dt>
+        <dd>{result?.decision ?? "aucune"}</dd>
+        <dt>Compréhension du tour</dt>
+        <dd>{result?.interaction_mode ?? "aucune"}</dd>
+        <dt>Analyse du raisonnement</dt>
+        <dd>{result?.reasoning_lenses || "Aucune lentille approfondie requise pour ce tour."}</dd>
+        <dt>Trace</dt>
+        <dd>{result ? `${result.trace_events} événement(s)` : "aucune"}</dd>
+        <dt>Oracle</dt>
+        <dd>{result?.independently_verified ? "validé" : "non configuré"}</dd>
+      </dl>
+      <p className="rule">{result?.observation ? "Une réponse a été générée. Elle reste non vérifiée sans oracle indépendant." : status?.verification_rule}</p>
+    </article>
+  );
+  const profiler = <Profiler port={config.port || 8080} elapsedMs={result?.elapsed_ms ?? null} />;
+  const bench = (
+    <article>
+      <p className="role">BENCHMARKS</p>
+      <p>
+        Le modèle actif sur 8080 est distinct du Qwen 9B validé. Les résultats
+        GTX 1080 ne lui sont pas attribués.
+      </p>
+      <button onClick={() => setPage("Chat")}>Tester le chat</button>
+    </article>
+  );
+  let content: React.ReactNode = chat;
+  if (page === "Agent") content = agent;
+  if (page === "Memoire") content = <Memory />;
+  if (page === "Outils MCP") content = <Memory tools />;
+  if (page === "Modeles")
+    content = (
+      <Models config={config} setConfig={setConfig} refresh={refresh} />
+    );
+  if (page === "Profiler") content = profiler;
+  if (page === "Benchmarks") content = bench;
+  if (page === "Parametres")
+    content = <Settings config={config} setConfig={setConfig} />;
+  return (
+    <main>
+      <aside>
+        <h1>
+          ADAPTIVE
+          <br />
+          HARNESS
+        </h1>
+        <nav>
+          {pages.map((x) => (
+            <button
+              key={x}
+              className={x === page ? "active" : ""}
+              onClick={() => setPage(x)}
+            >
+              {x}
+            </button>
+          ))}
+        </nav>
+      </aside>
+      <section className="conversation">
+        <header>
+          <div>
+            <strong>{page === "Chat" ? "Conversation locale" : page}</strong>
+            <small>{status?.llama_endpoint ?? "Connexion…"}</small>
+          </div>
+          <span className={status?.llama_reachable ? "badge online" : "badge"}>
+            {status?.llama_reachable ? "llama.cpp connecté" : "modèle arrêté"}
+          </span>
+        </header>
+        {content}
+      </section>
+      <aside className="inspector">
+        <h2>ETAT</h2>
+        <dl>
+          <dt>Contrôleur</dt>
+          <dd>{status?.controller_ready ? "prêt" : "inconnu"}</dd>
+          <dt>llama.cpp</dt>
+          <dd>{status?.llama_reachable ? "accessible" : "indisponible"}</dd>
+          <dt>Mémoire chat</dt>
+          <dd>{turns.length} tour(s)</dd>
+        </dl>
+        <button onClick={refresh}>Actualiser</button>
+      </aside>
+      <footer>
+        Exécution locale · durée :{" "}
+        {result ? `${result.elapsed_ms} ms` : "aucune"} · GPU/VRAM : non
+        télémetrés · TTFT/tok/s : non mesurés
+      </footer>
+    </main>
+  );
+}
