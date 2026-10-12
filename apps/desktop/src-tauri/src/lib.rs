@@ -113,7 +113,7 @@ fn harness_status(port: Option<u16>) -> HarnessStatus {
     let port = port.unwrap_or(8080);
     let mut client = LlamaCppClient::local("local");
     client.port = port;
-    HarnessStatus { controller_ready: true, llama_endpoint: format!("http://127.0.0.1:{port}/v1/completions"), llama_reachable: client.is_reachable(), verification_rule: "Une réponse reste non vérifiée tant qu'un oracle indépendant n'a pas validé la même affirmation.".into(), voice_state: "Aucun adaptateur STT/TTS local n'est configuré".into() }
+    HarnessStatus { controller_ready: true, llama_endpoint: format!("http://127.0.0.1:{port}/v1/chat/completions"), llama_reachable: client.is_reachable(), verification_rule: "Une réponse reste non vérifiée tant qu'un oracle indépendant n'a pas validé la même affirmation.".into(), voice_state: "Aucun adaptateur STT/TTS local n'est configuré".into() }
 }
 fn tcp_reachable(host: &str, port: u16) -> bool {
     (host, port)
@@ -312,14 +312,14 @@ fn run_task_blocking(prompt: String, model: String, port: u16, long_term_context
     let result = TaskLoop::run(
         &task,
         Budget {
-            wall_ms: 10_000,
-            tokens: 256,
+            wall_ms: 30_000,
+            tokens: 1_024,
             ram_mb: 2_048,
             tool_calls: 1,
         },
         BudgetUse {
             wall_ms: 1_000,
-            tokens: 128,
+            tokens: 768,
             ram_mb: 32,
             tool_calls: 1,
         },
@@ -431,6 +431,10 @@ fn start_configured_server(config: DesktopConfig) -> Result<u32, String> {
     if config.cache_type != "off" { command.args(["--cache-type-k", &config.cache_type, "--cache-type-v", &config.cache_type]); }
     if config.mtp_enabled { command.args(["--spec-type", "draft-mtp", "--spec-draft-n-max", &mtp_n_max]); }
     if config.server_metrics { command.arg("--metrics"); }
+    // Keep model reasoning enabled, but ask llama.cpp to separate it from the
+    // public chat content. The UI receives only `content`; hidden reasoning is
+    // never mislabelled as a final response or independent evidence.
+    command.args(["--reasoning", "auto", "--reasoning-format", "deepseek"]);
     command
         .current_dir(server.parent().unwrap_or(Path::new(".")))
         .spawn()

@@ -44,7 +44,10 @@ impl TaskLoop {
                         };
                     };
                     let started = Instant::now();
-                    let max_tokens = retrieve_cost.tokens.min(128).max(1) as u16;
+                    // Reasoning-capable GGUF models need room for both a bounded
+                    // private trace and a public answer. The server receives a
+                    // separate reasoning budget; this remains an output cap.
+                    let max_tokens = retrieve_cost.tokens.min(768).max(1) as u16;
                     let result = client.complete(&public_answer_prompt(&task.claim), max_tokens);
                     observation = match result {
                         Ok(c) => {

@@ -85,7 +85,7 @@ impl LlamaCppClient {
     }
     pub fn complete(&self, prompt: &str, max_tokens: u16) -> Result<Completion, String> {
         let body = format!(
-            r#"{{"model":"{}","prompt":"{}","max_tokens":{},"temperature":0}}"#,
+            r#"{{"model":"{}","messages":[{{"role":"user","content":"{}"}}],"max_tokens":{},"temperature":0}}"#,
             escape(&self.model),
             escape(prompt),
             max_tokens
@@ -98,7 +98,7 @@ impl LlamaCppClient {
         stream
             .set_write_timeout(Some(Duration::from_secs(10)))
             .map_err(|e| format!("write timeout: {e}"))?;
-        let request = format!("POST /v1/completions HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", self.host, body.len(), body);
+        let request = format!("POST /v1/chat/completions HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", self.host, body.len(), body);
         stream
             .write_all(request.as_bytes())
             .map_err(|e| format!("write: {e}"))?;
@@ -111,7 +111,7 @@ impl LlamaCppClient {
             return Err(format!("llama.cpp returned: {payload}"));
         }
         Ok(Completion {
-            text: json_string_after(payload, "\"text\":").ok_or("completion text missing")?,
+            text: json_string_after(payload, "\"content\":").ok_or("chat completion content missing")?,
             total_tokens: json_number_after(payload, "\"total_tokens\":"),
         })
     }
@@ -178,8 +178,8 @@ mod tests {
     use super::*;
     #[test]
     fn parses_completion() {
-        let p = r#"{"choices":[{"text":"ok\n"}],"usage":{"total_tokens":12}}"#;
-        assert_eq!(json_string_after(p, "\"text\":"), Some("ok\n".into()));
+        let p = r#"{"choices":[{"message":{"content":"ok\n"}}],"usage":{"total_tokens":12}}"#;
+        assert_eq!(json_string_after(p, "\"content\":"), Some("ok\n".into()));
         assert_eq!(json_number_after(p, "\"total_tokens\":"), Some(12));
     }
     #[test]
