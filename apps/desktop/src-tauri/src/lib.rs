@@ -121,7 +121,7 @@ impl DesktopConfig {
             self.context_size = 32_768;
         }
         if self.port == 0 {
-            self.port = 18_181;
+            self.port = 8080;
         }
         if self.threads == 0 {
             self.threads = 8;

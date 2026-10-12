@@ -165,6 +165,10 @@ function Models({
     }
   };
   const start = async () => {
+    if (!config.server_path.trim() || !config.gguf_path.trim()) {
+      setMsg("Choisis d’abord llama-server.exe et un modèle GGUF.");
+      return;
+    }
     try {
       const x = await save(),
         pid = await invoke<number>("start_configured_server", { config: x });
@@ -234,11 +238,17 @@ function Models({
         <button
           className="primary"
           onClick={start}
-          disabled={s?.llama_reachable}
+          disabled={s?.llama_reachable || !config.server_path || !config.gguf_path}
         >
           Démarrer le serveur
         </button>
       </div>
+      {!config.server_path || !config.gguf_path ? (
+        <Notice>
+          Configuration incomplète : sélectionne le moteur llama.cpp et le GGUF
+          avant de démarrer.
+        </Notice>
+      ) : null}
       <Notice kind={s?.llama_reachable ? "ok" : "info"}>
         {msg || s?.message || "Vérification…"}
       </Notice>
@@ -861,6 +871,16 @@ export default function App() {
           <Notice kind="error">Erreur llama.cpp : {result.model_error}</Notice>
         )}
         {error && <Notice kind="error">{error}</Notice>}
+        {result && (
+          <div className="run-summary">
+            <div>
+              <p className="role">DERNIER TOUR</p>
+              <strong>{result.decision}</strong>
+              <small>{result.interaction_mode}</small>
+            </div>
+            <button onClick={() => setPage("Agent")}>Voir l’analyse</button>
+          </div>
+        )}
       </article>
       <form onSubmit={submit}>
         <textarea
@@ -978,7 +998,7 @@ export default function App() {
             {status?.llama_reachable ? "llama.cpp connecté" : "modèle arrêté"}
           </span>
         </header>
-        {content}
+        <div className="page-content">{content}</div>
       </section>
       <aside className="inspector">
         <h2>ETAT</h2>
@@ -993,9 +1013,8 @@ export default function App() {
         <button onClick={refresh}>Actualiser</button>
       </aside>
       <footer>
-        Exécution locale · durée :{" "}
-        {result ? `${result.elapsed_ms} ms` : "aucune"} · GPU/VRAM : non
-        télémetrés · TTFT/tok/s : non mesurés
+        Exécution locale · durée : {result ? `${result.elapsed_ms} ms` : "aucune"}
+        {" · "}diagnostics matériels dans Profiler
       </footer>
     </main>
   );
