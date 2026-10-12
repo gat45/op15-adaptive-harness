@@ -20,6 +20,13 @@ comportement est implémenté **et** testé au bon niveau.
 
 ## P0 — fiabilité avant nouvelles capacités
 
+Références de protocole : [τ-bench](https://arxiv.org/abs/2406.12045) pour
+l'état final des actions, [AgentDojo](https://arxiv.org/abs/2406.13352) pour
+les injections d'outils, [SWE-rebench](https://arxiv.org/abs/2505.20411) pour
+des tâches renouvelées, et [Judging the Judges](https://arxiv.org/abs/2406.07791)
+pour évaluer le biais d'un juge LLM. Elles guident les tests ; elles ne
+constituent pas une preuve de performance OP15.
+
 - [ ] **Construire puis lancer le dernier exécutable desktop.** L’instance qui
   était ouverte pendant les essais précédents était un ancien binaire. Critère :
   numéro de commit/version visible dans l’UI, GGUF sélectionnable, chat et

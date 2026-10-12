@@ -7,6 +7,33 @@
 Cette liste conserve les URL de recherche fournies pour le projet. Une URL est
 une piste documentée, jamais une validation automatique ou une dépendance.
 
+## Références primaires — audits, comportement et évaluation
+
+Ces liens sont prioritaires pour auditer le harnais : ils ne valident pas à eux
+seuls une performance mesurée sur OP15.
+
+- https://github.com/gat45/op15-adaptive-harness
+- https://github.com/gat45/op15-adaptive-harness/blob/main/README.md
+- https://github.com/gat45/op15-adaptive-harness/blob/main/ARCHITECTURE.md
+- https://github.com/gat45/op15-adaptive-harness/blob/main/RELIABILITY_AUDIT.md
+- https://github.com/gat45/op15-adaptive-harness/blob/main/docs/TODO_AUDIT_2026-10-12.md
+- https://github.com/gat45/op15-adaptive-harness/blob/main/CONTROL_LEARNING_CONTRACTS.md
+- https://github.com/gat45/op15-adaptive-harness/blob/main/COGNITIVE_ARCHITECTURES_EVALUATION.md
+- https://github.com/gat45/op15-adaptive-harness/blob/main/TODO.md
+- https://arxiv.org/abs/2210.03629
+- https://arxiv.org/abs/2303.11366
+- https://arxiv.org/abs/2406.12045
+- https://arxiv.org/abs/2406.13352
+- https://arxiv.org/abs/2505.20411
+- https://arxiv.org/abs/2406.07791
+- https://github.com/colab2/midca
+- https://arxiv.org/abs/2305.16291
+- https://ccrg.cs.memphis.edu/
+- https://github.com/
+- https://arxiv.org/
+- https://huggingface.co/
+- https://www.byhand.ai/
+
 ## Projets personnels et OP15
 
 - https://github.com/gat45/op15-adaptive-harness
