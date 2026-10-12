@@ -1,5 +1,9 @@
 # Sources et dépôts
 
+> Statut d'audit : voir [SOURCE_AUDIT_2026-10-12.md](docs/SOURCE_AUDIT_2026-10-12.md).
+> Le catalogue contient 198 URL uniques au 12 octobre 2026. Elles sont des
+> références à étudier, pas des dépendances validées ou des intégrations.
+
 Cette liste conserve les URL de recherche fournies pour le projet. Une URL est
 une piste documentée, jamais une validation automatique ou une dépendance.
 
